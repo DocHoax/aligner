@@ -1,0 +1,25 @@
+{
+  "name": "alignify-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time collaborative visual workspace for software architecture and systems design",
+  "workspaces": [
+    "packages/*",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm --workspace=apps/web run start",
+    "build": "npm run build:packages && npm --workspace=apps/web run build",
+    "build:packages": "npm --workspace=packages/shared-types run build && npm --workspace=packages/canvas-engine run build",
+    "test": "npm run test:packages && npm --workspace=apps/web run test:ci",
+    "test:packages": "vitest run --dir packages",
+    "test:watch": "vitest --dir packages",
+    "lint": "eslint . --ext .ts,.html",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/canvas-engine/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.app.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7",
+    "@types/node": "^22.13.5"
+  }
+}
