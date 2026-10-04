@@ -4,7 +4,13 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@alignify/shared-types": ["../shared-types/dist/index.d.ts"],
+      "@alignify/ui": ["../ui/dist/index.d.ts"]
+    }
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/__tests__/**/*", "vitest.config.ts"]
 }
