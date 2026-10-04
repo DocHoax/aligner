@@ -279,8 +279,10 @@ export type DocumentMetadata = BoardMetadata;
 export type ExportFormat = 'png' | 'svg' | 'json';
 
 export interface ExportOptions {
-  format: ExportFormat;
+  format?: ExportFormat;
   scale?: number; // default: 2 (retina)
+  pixelRatio?: number;
+  quality?: number;
   includeBackground?: boolean;
   backgroundColor?: string;
   padding?: number; // padding in px around content bounds
