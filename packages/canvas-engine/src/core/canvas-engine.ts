@@ -10,6 +10,7 @@ import {
   Point,
   ToolType
 } from '@alignify/shared-types';
+import { UserPresence, DocumentOperation } from '@alignify/protocol';
 import { Camera } from '../camera/camera';
 import { ClipboardManager } from '../clipboard/clipboard-manager';
 import { ExportManager } from '../export/export-manager';
@@ -48,6 +49,9 @@ export class CanvasEngine {
   private readonly renderer: CanvasRenderer2D;
   private readonly eventBus: EventBus;
   private readonly renderLoop: RenderLoop;
+
+  // Real-Time Collaborators State
+  private readonly collaborators = new Map<string, UserPresence>();
 
   // Active Document State
   private currentDocumentMeta: DocumentMeta = {
@@ -129,6 +133,38 @@ export class CanvasEngine {
   }
   getRenderer(): CanvasRenderer2D {
     return this.renderer;
+  }
+
+  // --- Real-Time Collaboration Methods ---
+  setCollaborators(users: UserPresence[] | Iterable<UserPresence>): void {
+    this.collaborators.clear();
+    for (const user of users) {
+      if (user && user.userId) {
+        this.collaborators.set(user.userId, user);
+      }
+    }
+    this.renderLoop.requestRender();
+  }
+
+  updateCollaborator(user: UserPresence): void {
+    if (!user || !user.userId) return;
+    this.collaborators.set(user.userId, user);
+    this.renderLoop.requestRender();
+  }
+
+  removeCollaborator(userId: string): void {
+    if (this.collaborators.delete(userId)) {
+      this.renderLoop.requestRender();
+    }
+  }
+
+  getCollaborators(): UserPresence[] {
+    return Array.from(this.collaborators.values());
+  }
+
+  applyRemoteOperation(op: DocumentOperation): void {
+    this.store.applyRemoteOperation(op);
+    this.renderLoop.requestRender();
   }
 
   // --- DOM Attachment Lifecycle ---
@@ -390,6 +426,10 @@ export class CanvasEngine {
       this.renderLoop.requestRender();
     });
 
+    this.store.onLocalOperation((op) => {
+      this.eventBus.emit('local_operation', op);
+    });
+
     this.selection.subscribe(() => {
       const selected = this.selection.getSelectedObjects();
       this.eventBus.emit('selection_changed', selected);
@@ -427,7 +467,8 @@ export class CanvasEngine {
       this.camera,
       this.selection,
       this.tools.getPreviewObject(),
-      this.tools.getMarqueeBox()
+      this.tools.getMarqueeBox(),
+      this.collaborators.values()
     );
   }
 
@@ -471,6 +512,7 @@ export class CanvasEngine {
     const info = this.createPointerInfo(e);
     if (!info) return;
     this.tools.onPointerMove(info);
+    this.eventBus.emit('cursor_moved', info.worldPoint);
     this.updateCursor();
     this.renderLoop.requestRender();
   }
