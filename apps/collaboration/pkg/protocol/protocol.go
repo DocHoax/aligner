@@ -67,19 +67,34 @@ type ClientMessage struct {
 	Payload   json.RawMessage   `json:"payload"`
 }
 
+// NewClientMessage creates a client message with a current timestamp.
+func NewClientMessage(msgType ClientMessageType, boardID, userID string, payload interface{}) *ClientMessage {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		data = []byte("null")
+	}
+	return &ClientMessage{
+		Type:      msgType,
+		BoardID:   boardID,
+		UserID:    userID,
+		Timestamp: time.Now().UnixMilli(),
+		Payload:   data,
+	}
+}
+
 // ServerMessageType defines supported server envelope types.
 type ServerMessageType string
 
 const (
-	ServerMsgJoined        ServerMessageType = "joined"
-	ServerMsgUserJoined    ServerMessageType = "user_joined"
-	ServerMsgUserLeft      ServerMessageType = "user_left"
-	ServerMsgOperation     ServerMessageType = "operation"
-	ServerMsgCursor        ServerMessageType = "cursor"
-	ServerMsgSelection     ServerMessageType = "selection"
-	ServerMsgSnapshot      ServerMessageType = "snapshot"
-	ServerMsgAck           ServerMessageType = "ack"
-	ServerMsgError         ServerMessageType = "error"
+	ServerMsgJoined     ServerMessageType = "joined"
+	ServerMsgUserJoined ServerMessageType = "user_joined"
+	ServerMsgUserLeft   ServerMessageType = "user_left"
+	ServerMsgOperation  ServerMessageType = "operation"
+	ServerMsgCursor     ServerMessageType = "cursor"
+	ServerMsgSelection  ServerMessageType = "selection"
+	ServerMsgSnapshot   ServerMessageType = "snapshot"
+	ServerMsgAck        ServerMessageType = "ack"
+	ServerMsgError      ServerMessageType = "error"
 )
 
 // ServerMessage represents an outgoing message from the server over WebSocket.

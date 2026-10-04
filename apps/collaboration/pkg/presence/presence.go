@@ -32,6 +32,18 @@ func (m *Manager) SetUser(user protocol.UserPresence) {
 	m.users[user.UserID] = &user
 }
 
+// AddUser registers a participant and returns the stored presence snapshot.
+func (m *Manager) AddUser(userID, userName, userColor string) *protocol.UserPresence {
+	m.SetUser(protocol.UserPresence{
+		UserID:      userID,
+		UserName:    userName,
+		UserColor:   userColor,
+		SelectedIDs: []string{},
+	})
+	user, _ := m.GetUser(userID)
+	return user
+}
+
 // RemoveUser unregisters a user.
 func (m *Manager) RemoveUser(userID string) bool {
 	m.mu.Lock()
@@ -115,7 +127,26 @@ func (m *Manager) ReapInactiveUsers(timeout time.Duration) []string {
 			delete(m.users, id)
 			reaped = append(reaped, id)
 		}
+
 	}
 
 	return reaped
+}
+
+// Touch refreshes a user's activity timestamp.
+func (m *Manager) Touch(userID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user, exists := m.users[userID]
+	if !exists {
+		return false
+	}
+	user.LastActive = time.Now().UnixMilli()
+	return true
+}
+
+// ReapStaleUsers removes users inactive for the given duration.
+func (m *Manager) ReapStaleUsers(timeout time.Duration) []string {
+	return m.ReapInactiveUsers(timeout)
 }
