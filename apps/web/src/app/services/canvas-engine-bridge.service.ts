@@ -1,4 +1,5 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, inject, effect, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import {
   CanvasEngine,
 } from '@alignify/canvas-engine';
@@ -6,14 +7,20 @@ import {
   CanvasObject,
   DocumentMeta,
   ObjectStyle,
+  Point,
   ToolType
 } from '@alignify/shared-types';
+import { DocumentOperation } from '@alignify/protocol';
+import { CollaborationService } from './collaboration.service';
 
 @Injectable({
   providedIn: 'root'
 })
-export class CanvasEngineBridgeService {
+export class CanvasEngineBridgeService implements OnDestroy {
+  readonly collaboration = inject(CollaborationService);
+
   private engine: CanvasEngine | null = null;
+  private subscriptions: Subscription[] = [];
 
   // Reactive State Signals
   readonly tool = signal<ToolType>('select');
@@ -46,6 +53,21 @@ export class CanvasEngineBridgeService {
 
   constructor() {
     this.initEngine();
+    this.setupCollaborationBridge();
+
+    // Automatically connect to collaboration server on start
+    if (typeof window !== 'undefined') {
+      this.collaboration.connect();
+    }
+  }
+
+  ngOnDestroy(): void {
+    for (const sub of this.subscriptions) {
+      sub.unsubscribe();
+    }
+    this.subscriptions = [];
+    this.engine?.destroy();
+    this.engine = null;
   }
 
   private initEngine(): void {
@@ -64,7 +86,20 @@ export class CanvasEngineBridgeService {
     });
 
     eventBus.on('selection_changed', (selected) => {
-      this.selectedObjects.set([...(selected as CanvasObject[])]);
+      const objects = selected as CanvasObject[];
+      this.selectedObjects.set([...objects]);
+      // Broadcast local selection to collaborators
+      const ids = objects.map((o) => o.id);
+      this.collaboration.sendSelection(ids);
+    });
+
+    eventBus.on('cursor_moved', (pt) => {
+      const worldPoint = pt as Point;
+      this.collaboration.sendCursor(worldPoint.x, worldPoint.y);
+    });
+
+    eventBus.on('local_operation', (op) => {
+      this.collaboration.sendOperation(op as DocumentOperation);
     });
 
     eventBus.on('camera_changed', (cam) => {
@@ -95,6 +130,35 @@ export class CanvasEngineBridgeService {
 
     eventBus.on('edit_request', (obj) => {
       this.activeEditObject.set(obj as CanvasObject);
+    });
+  }
+
+  private setupCollaborationBridge(): void {
+    // 1. Sync remote operations into the canvas engine without polluting history
+    this.subscriptions.push(
+      this.collaboration.remoteOperation$.subscribe(({ operation }) => {
+        if (this.engine) {
+          this.engine.applyRemoteOperation(operation);
+        }
+      })
+    );
+
+    // 2. Sync full remote snapshots on room entry or reconnect catch-up
+    this.subscriptions.push(
+      this.collaboration.remoteSnapshot$.subscribe(({ objects }) => {
+        if (this.engine) {
+          this.engine.getStore().reset(objects);
+          this.flashStatus('Synchronized board state');
+        }
+      })
+    );
+
+    // 3. Reactively pass collaborator presence list to the engine renderer
+    effect(() => {
+      const collaborators = this.collaboration.collaborators();
+      if (this.engine) {
+        this.engine.setCollaborators(collaborators);
+      }
     });
   }
 
