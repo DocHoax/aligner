@@ -1,0 +1,301 @@
+import { Injectable, signal, computed } from '@angular/core';
+import {
+  CanvasEngine,
+} from '@alignify/canvas-engine';
+import {
+  CanvasObject,
+  DocumentMeta,
+  ObjectStyle,
+  ToolType
+} from '@alignify/shared-types';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class CanvasEngineBridgeService {
+  private engine: CanvasEngine | null = null;
+
+  // Reactive State Signals
+  readonly tool = signal<ToolType>('select');
+  readonly zoom = signal<number>(100);
+  readonly selectedObjects = signal<CanvasObject[]>([]);
+  readonly selectedCount = computed(() => this.selectedObjects().length);
+  readonly singleSelectedObject = computed(() => {
+    const list = this.selectedObjects();
+    return list.length === 1 ? list[0] : null;
+  });
+
+  readonly canUndo = signal<boolean>(false);
+  readonly canRedo = signal<boolean>(false);
+  readonly documentMeta = signal<DocumentMeta>({
+    id: 'doc_' + Date.now().toString(36),
+    name: 'Untitled Architecture Diagram',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    objectCount: 0
+  });
+
+  readonly cameraState = signal<{ x: number; y: number; zoom: number }>({
+    x: 0,
+    y: 0,
+    zoom: 1
+  });
+
+  readonly activeEditObject = signal<CanvasObject | null>(null);
+  readonly statusMessage = signal<string>('Ready');
+
+  constructor() {
+    this.initEngine();
+  }
+
+  private initEngine(): void {
+    this.engine = new CanvasEngine({
+      rendererOptions: {
+        gridEnabled: true,
+        gridSize: 20
+      },
+      autosaveIntervalMs: 4000
+    });
+
+    const eventBus = this.engine.getEventBus();
+
+    eventBus.on('tool_changed', (tool) => {
+      this.tool.set(tool as ToolType);
+    });
+
+    eventBus.on('selection_changed', (selected) => {
+      this.selectedObjects.set([...(selected as CanvasObject[])]);
+    });
+
+    eventBus.on('camera_changed', (cam) => {
+      const camera = cam as { x: number; y: number; zoom: number };
+      this.cameraState.set(camera);
+      this.zoom.set(Math.round(camera.zoom * 100));
+    });
+
+    eventBus.on('history_changed', (hist) => {
+      const h = hist as { canUndo: boolean; canRedo: boolean };
+      this.canUndo.set(h.canUndo);
+      this.canRedo.set(h.canRedo);
+    });
+
+    eventBus.on('document_changed', (meta) => {
+      this.documentMeta.set(meta as DocumentMeta);
+    });
+
+    eventBus.on('document_saved', (meta) => {
+      this.documentMeta.set(meta as DocumentMeta);
+      this.flashStatus('Document saved to local storage');
+    });
+
+    eventBus.on('document_loaded', (meta) => {
+      this.documentMeta.set(meta as DocumentMeta);
+      this.flashStatus('Document loaded successfully');
+    });
+
+    eventBus.on('edit_request', (obj) => {
+      this.activeEditObject.set(obj as CanvasObject);
+    });
+  }
+
+  getEngine(): CanvasEngine {
+    if (!this.engine) {
+      this.initEngine();
+    }
+    return this.engine!;
+  }
+
+  attach(canvas: HTMLCanvasElement): void {
+    this.getEngine().attach(canvas);
+  }
+
+  detach(): void {
+    this.engine?.detach();
+  }
+
+  setTool(tool: ToolType): void {
+    this.tool.set(tool);
+    this.engine?.setTool(tool);
+  }
+
+  setZoom(zoomPercent: number): void {
+    this.engine?.setZoom(zoomPercent / 100);
+  }
+
+  zoomIn(): void {
+    this.engine?.zoomIn();
+  }
+
+  zoomOut(): void {
+    this.engine?.zoomOut();
+  }
+
+  resetZoom(): void {
+    this.engine?.resetZoom();
+  }
+
+  fitToContent(): void {
+    this.engine?.fitToContent();
+  }
+
+  selectAll(): void {
+    this.engine?.selectAll();
+  }
+
+  clearSelection(): void {
+    this.engine?.clearSelection();
+  }
+
+  deleteSelected(): void {
+    this.engine?.deleteSelected();
+  }
+
+  undo(): void {
+    this.engine?.getHistory().undo();
+  }
+
+  redo(): void {
+    this.engine?.getHistory().redo();
+  }
+
+  updateSelectedProperties(properties: Partial<CanvasObject>): void {
+    this.engine?.updateSelectedProperties(properties);
+    // Update local signal copy for instant responsiveness
+    const current = this.selectedObjects();
+    this.selectedObjects.set(
+      current.map((obj) => ({ ...obj, ...properties } as unknown as CanvasObject))
+    );
+  }
+
+  updateSelectedStyle(style: Partial<ObjectStyle>): void {
+    this.engine?.updateSelectedStyle(style);
+    const current = this.selectedObjects();
+    this.selectedObjects.set(
+      current.map((obj) => ({
+        ...obj,
+        ...style
+      } as unknown as CanvasObject))
+    );
+  }
+
+  reorderSelected(action: 'bringToFront' | 'sendToBack' | 'bringForward' | 'sendBackward'): void {
+    this.engine?.reorderSelected(action);
+  }
+
+  newDocument(name?: string): void {
+    this.engine?.newDocument(name);
+    this.flashStatus('New document created');
+  }
+
+  async saveDocument(): Promise<void> {
+    if (!this.engine) return;
+    await this.engine.saveDocument();
+  }
+
+  async loadDocument(id: string): Promise<boolean> {
+    if (!this.engine) return false;
+    return await this.engine.loadDocument(id);
+  }
+
+  async loadFromJSON(jsonString: string): Promise<void> {
+    if (!this.engine) return;
+    await this.engine.loadFromJSON(jsonString);
+  }
+
+  setDocumentName(name: string): void {
+    this.engine?.setDocumentName(name);
+  }
+
+  // Export actions
+  async exportPNG(): Promise<void> {
+    if (!this.engine) return;
+    const blob = await this.engine.getExport().exportPNG({
+      backgroundColor: '#090d16',
+      pixelRatio: 2
+    });
+    const filename = `${this.documentMeta().name.toLowerCase().replace(/\s+/g, '-')}.png`;
+    this.triggerDownload(this.dataUrlToBlob(blob), filename);
+    this.flashStatus('Exported PNG successfully');
+  }
+
+  exportSVG(): void {
+    if (!this.engine) return;
+    const svgString = this.engine.getExport().exportSVG({
+      backgroundColor: '#090d16'
+    });
+    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const filename = `${this.documentMeta().name.toLowerCase().replace(/\s+/g, '-')}.svg`;
+    this.triggerDownload(blob, filename);
+    this.flashStatus('Exported SVG successfully');
+  }
+
+  exportJSON(): void {
+    if (!this.engine) return;
+    const jsonString = this.engine.getExport().exportJSON();
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+    const filename = `${this.documentMeta().name.toLowerCase().replace(/\s+/g, '-')}.alignify.json`;
+    this.triggerDownload(blob, filename);
+    this.flashStatus('Exported Architecture Diagram JSON');
+  }
+
+  // Inline editing overlay actions
+  beginEditing(object: CanvasObject): void {
+    this.activeEditObject.set(object);
+  }
+
+  finishEditing(newText: string): void {
+    const obj = this.activeEditObject();
+    if (!obj || !this.engine) {
+      this.activeEditObject.set(null);
+      return;
+    }
+
+    if (obj.type === 'text' || obj.type === 'sticky') {
+      this.engine.updateSelectedProperties({ text: newText });
+    }
+    this.activeEditObject.set(null);
+  }
+
+  cancelEditing(): void {
+    this.activeEditObject.set(null);
+  }
+
+  private triggerDownload(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  private dataUrlToBlob(dataUrl: string): Blob {
+    const [header, data] = dataUrl.split(',');
+    if (!header || !data) {
+      throw new Error('Export returned an invalid data URL.');
+    }
+
+    const mimeMatch = header.match(/^data:(.*?);base64$/);
+    if (!mimeMatch?.[1]) {
+      throw new Error('Export returned an unsupported data URL.');
+    }
+
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mimeMatch[1] });
+  }
+
+  private flashStatus(msg: string): void {
+    this.statusMessage.set(msg);
+    setTimeout(() => {
+      if (this.statusMessage() === msg) {
+        this.statusMessage.set('Ready');
+      }
+    }, 3500);
+  }
+}
