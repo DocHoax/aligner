@@ -18,14 +18,14 @@ describe('Mat2D Affine Transformations', () => {
   });
 
   it('scales points correctly', () => {
-    const m = Mat2D.scaling(2, 3);
+    const m = Mat2D.scale(2, 3);
     const pt = m.transformPoint({ x: 10, y: 10 });
     expect(pt.x).toBe(20);
     expect(pt.y).toBe(30);
   });
 
   it('inverts matrix correctly', () => {
-    const m = Mat2D.translation(100, 200).scale(2, 2);
+    const m = Mat2D.translation(100, 200).scaleBy(2, 2);
     const inv = m.invert();
     expect(inv).not.toBeNull();
 

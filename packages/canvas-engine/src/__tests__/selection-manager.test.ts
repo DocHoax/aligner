@@ -12,22 +12,22 @@ describe('Selection Manager', () => {
     store.add(obj2);
 
     const sel = new SelectionManager(store);
-    expect(sel.count).toBe(0);
+    expect(sel.selectedCount).toBe(0);
 
     sel.select('1');
-    expect(sel.count).toBe(1);
+    expect(sel.selectedCount).toBe(1);
     expect(sel.isSelected('1')).toBe(true);
 
     sel.toggle('2');
-    expect(sel.count).toBe(2);
+    expect(sel.selectedCount).toBe(2);
     expect(sel.isSelected('2')).toBe(true);
 
     sel.toggle('1');
-    expect(sel.count).toBe(1);
+    expect(sel.selectedCount).toBe(1);
     expect(sel.isSelected('1')).toBe(false);
 
     sel.clear();
-    expect(sel.count).toBe(0);
+    expect(sel.selectedCount).toBe(0);
   });
 
   it('computes aggregated bounding box for multi-selection', () => {
@@ -40,7 +40,7 @@ describe('Selection Manager', () => {
     const sel = new SelectionManager(store);
     sel.setSelection(['1', '2']);
 
-    const bounds = sel.getBoundingBox();
+    const bounds = sel.getSelectionBounds();
     expect(bounds).not.toBeNull();
     expect(bounds!.minX).toBe(0);
     expect(bounds!.minY).toBe(0);

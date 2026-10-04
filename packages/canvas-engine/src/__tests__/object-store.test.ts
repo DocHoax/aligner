@@ -18,7 +18,7 @@ describe('Object Store CRUD & Z-Ordering', () => {
     store.update(obj1.id, { x: 50 });
     expect(store.get(obj1.id)?.x).toBe(50);
 
-    store.delete(obj1.id);
+    store.remove(obj1.id);
     expect(store.getAll().length).toBe(1);
     expect(store.get(obj1.id)).toBeUndefined();
   });

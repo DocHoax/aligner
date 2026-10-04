@@ -16,13 +16,13 @@ describe('Command Pattern Undo / Redo Stack', () => {
     history.execute(cmd);
 
     expect(store.getAll().length).toBe(1);
-    expect(history.canUndo()).toBe(true);
-    expect(history.canRedo()).toBe(false);
+    expect(history.canUndo).toBe(true);
+    expect(history.canRedo).toBe(false);
 
     history.undo();
     expect(store.getAll().length).toBe(0);
-    expect(history.canUndo()).toBe(false);
-    expect(history.canRedo()).toBe(true);
+    expect(history.canUndo).toBe(false);
+    expect(history.canRedo).toBe(true);
 
     history.redo();
     expect(store.getAll().length).toBe(1);
