@@ -26,6 +26,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
+    "ignoreDeprecations": "5.0",
     "paths": {
       "@alignify/shared-types": ["packages/shared-types/src/index.ts"],
       "@alignify/canvas-engine": ["packages/canvas-engine/src/index.ts"],
