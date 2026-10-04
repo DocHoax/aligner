@@ -3,6 +3,7 @@
  * Master rendering coordinator with HiDPI support, viewport culling, and multi-layer drawing.
  */
 import { CanvasObject, Rect, Size } from '@alignify/shared-types';
+import { UserPresence } from '@alignify/protocol';
 import { Camera } from '../camera/camera';
 import { Bounds } from '../math/bounds';
 import { ObjectStore } from '../objects/object-store';
@@ -10,6 +11,7 @@ import { SelectionManager } from '../selection/selection-manager';
 import { GridRenderer } from './grid-renderer';
 import { SelectionRenderer } from './selection-renderer';
 import { ShapeRenderer } from './shape-renderer';
+import { PresenceRenderer } from './presence-renderer';
 
 export interface RendererOptions {
   backgroundColor?: string;
@@ -85,7 +87,8 @@ export class CanvasRenderer2D {
     camera: Camera,
     selection: SelectionManager,
     previewObject: CanvasObject | null = null,
-    marqueeBox: Rect | null = null
+    marqueeBox: Rect | null = null,
+    collaborators?: Iterable<UserPresence>
   ): void {
     if (!this.ctx || !this.canvas) return;
     const ctx = this.ctx;
@@ -140,5 +143,10 @@ export class CanvasRenderer2D {
 
     // 6. Render Selection Outlines, Handles, Marquee (in screen coordinate space)
     SelectionRenderer.render(ctx, camera, this.viewportSize, selection, marqueeBox);
+
+    // 7. Render Collaborator Presence (Remote selections, cursors & badges in screen space)
+    if (collaborators) {
+      PresenceRenderer.render(ctx, camera, this.viewportSize, collaborators, store);
+    }
   }
 }

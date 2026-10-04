@@ -8,6 +8,7 @@
     "baseUrl": ".",
     "paths": {
       "@alignify/shared-types": ["../shared-types/dist/index.d.ts"],
+      "@alignify/protocol": ["../protocol/dist/index.d.ts"],
       "@alignify/ui": ["../ui/dist/index.d.ts"]
     }
   },

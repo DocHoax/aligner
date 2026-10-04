@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@alignify/protocol": "*",
     "@alignify/shared-types": "*",
     "@alignify/ui": "*"
   },

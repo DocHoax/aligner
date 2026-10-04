@@ -40,7 +40,9 @@ export * from './tools/tool-manager';
 export * from './renderer/grid-renderer';
 export * from './renderer/shape-renderer';
 export * from './renderer/selection-renderer';
+export * from './renderer/presence-renderer';
 export * from './renderer/canvas-renderer-2d';
+export * from './renderer/presence-renderer';
 
 // Clipboard & Export
 export * from './clipboard/clipboard-manager';
