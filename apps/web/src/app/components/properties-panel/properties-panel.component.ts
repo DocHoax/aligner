@@ -1,7 +1,13 @@
 import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { CanvasObject, TextObject, StickyNoteObject } from '@alignify/shared-types';
+import {
+  CanvasObject,
+  TextObject,
+  StickyNoteObject,
+  StrokeStyle,
+  TextAlign
+} from '@alignify/shared-types';
 import { COLOR_PALETTE, STROKE_WIDTH_PRESETS, FONT_SIZE_PRESETS } from '@alignify/ui';
 import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.service';
 
@@ -25,9 +31,10 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
             </span>
           </div>
 
-          <!-- Quick Actions: Duplicate & Delete -->
+          <!-- Quick Actions: Layering & Delete -->
           <div class="flex items-center gap-1">
             <button
+              type="button"
               (click)="bridge.reorderSelected('bringToFront')"
               class="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition"
               title="Bring to Front"
@@ -38,16 +45,18 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
               </svg>
             </button>
             <button
+              type="button"
               (click)="bridge.reorderSelected('sendToBack')"
               class="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition"
               title="Send to Back"
             >
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="22 12 12 17 2 12"></polyline>
-                <polygon points="12 22 22 17 12 12 2 17 12 22"></polygon>
+                <polygon points="12 22 22 17 12 12 22"></polygon>
               </svg>
             </button>
             <button
+              type="button"
               (click)="bridge.deleteSelected()"
               class="p-1 rounded text-red-400 hover:text-red-300 hover:bg-red-950/40 transition ml-1"
               title="Delete Selected (Del)"
@@ -108,6 +117,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
             <div class="flex items-center justify-between text-slate-400 font-medium">
               <span>Fill Color</span>
               <button
+                type="button"
                 (click)="updateFill('transparent')"
                 class="text-[10px] text-blue-400 hover:underline"
               >
@@ -117,6 +127,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
             <div class="flex flex-wrap gap-1.5 items-center">
               @for (color of colorPalette; track color) {
                 <button
+                  type="button"
                   (click)="updateFill(color)"
                   [style.backgroundColor]="color"
                   [class.ring-2]="currentFill() === color"
@@ -139,90 +150,98 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
         }
 
         <!-- Stroke Color & Width Section -->
-        <div class="flex flex-col gap-1.5">
-          <div class="flex items-center justify-between text-slate-400 font-medium">
-            <span>Stroke Color</span>
-            <button
-              (click)="updateStroke('transparent')"
-              class="text-[10px] text-blue-400 hover:underline"
-            >
-              None
-            </button>
-          </div>
-          <div class="flex flex-wrap gap-1.5 items-center">
-            @for (color of colorPalette; track color) {
+        @if (showStrokeSection()) {
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between text-slate-400 font-medium">
+              <span>Stroke Color</span>
               <button
-                (click)="updateStroke(color)"
-                [style.backgroundColor]="color"
-                [class.ring-2]="currentStroke() === color"
-                [class.ring-blue-500]="currentStroke() === color"
-                [class.ring-offset-1]="currentStroke() === color"
-                [class.ring-offset-slate-900]="currentStroke() === color"
-                class="w-5 h-5 rounded-md border border-slate-700 hover:scale-110 transition shadow-sm"
-                [title]="color"
-              ></button>
-            }
-            <input
-              type="color"
-              [ngModel]="currentStroke() !== 'transparent' ? currentStroke() : '#ffffff'"
-              (ngModelChange)="updateStroke($event)"
-              class="w-5 h-5 rounded cursor-pointer border-0 bg-transparent p-0"
-              title="Custom Stroke Color"
-            />
-          </div>
-
-          <!-- Stroke Width Presets -->
-          <div class="flex items-center gap-1 mt-2">
-            <span class="text-slate-400 mr-2 text-[11px]">Width:</span>
-            @for (w of strokeWidthPresets; track w) {
-              <button
-                (click)="updateStrokeWidth(w)"
-                [class.bg-blue-600]="currentStrokeWidth() === w"
-                [class.text-white]="currentStrokeWidth() === w"
-                [class.bg-canvas-elevated]="currentStrokeWidth() !== w"
-                [class.text-slate-300]="currentStrokeWidth() !== w"
-                class="px-2.5 py-1 rounded-md text-[11px] font-mono border border-canvas-border hover:bg-canvas-hover transition"
+                type="button"
+                (click)="updateStroke('transparent')"
+                class="text-[10px] text-blue-400 hover:underline"
               >
-                {{ w }}px
+                None
               </button>
-            }
-          </div>
+            </div>
+            <div class="flex flex-wrap gap-1.5 items-center">
+              @for (color of colorPalette; track color) {
+                <button
+                  type="button"
+                  (click)="updateStroke(color)"
+                  [style.backgroundColor]="color"
+                  [class.ring-2]="currentStroke() === color"
+                  [class.ring-blue-500]="currentStroke() === color"
+                  [class.ring-offset-1]="currentStroke() === color"
+                  [class.ring-offset-slate-900]="currentStroke() === color"
+                  class="w-5 h-5 rounded-md border border-slate-700 hover:scale-110 transition shadow-sm"
+                  [title]="color"
+                ></button>
+              }
+              <input
+                type="color"
+                [ngModel]="currentStroke() !== 'transparent' ? currentStroke() : '#ffffff'"
+                (ngModelChange)="updateStroke($event)"
+                class="w-5 h-5 rounded cursor-pointer border-0 bg-transparent p-0"
+                title="Custom Stroke Color"
+              />
+            </div>
 
-          <!-- Stroke Style Presets -->
-          <div class="flex items-center gap-1 mt-1.5">
-            <span class="text-slate-400 mr-2 text-[11px]">Style:</span>
-            <button
-              (click)="updateStrokeStyle('solid')"
-              [class.bg-blue-600]="currentStrokeStyle() === 'solid'"
-              [class.text-white]="currentStrokeStyle() === 'solid'"
-              [class.bg-canvas-elevated]="currentStrokeStyle() !== 'solid'"
-              [class.text-slate-300]="currentStrokeStyle() !== 'solid'"
-              class="px-2 py-1 rounded-md text-[10px] font-medium border border-canvas-border hover:bg-canvas-hover transition flex-1"
-            >
-              Solid
-            </button>
-            <button
-              (click)="updateStrokeStyle('dashed')"
-              [class.bg-blue-600]="currentStrokeStyle() === 'dashed'"
-              [class.text-white]="currentStrokeStyle() === 'dashed'"
-              [class.bg-canvas-elevated]="currentStrokeStyle() !== 'dashed'"
-              [class.text-slate-300]="currentStrokeStyle() !== 'dashed'"
-              class="px-2 py-1 rounded-md text-[10px] font-medium border border-canvas-border hover:bg-canvas-hover transition flex-1"
-            >
-              Dashed
-            </button>
-            <button
-              (click)="updateStrokeStyle('dotted')"
-              [class.bg-blue-600]="currentStrokeStyle() === 'dotted'"
-              [class.text-white]="currentStrokeStyle() === 'dotted'"
-              [class.bg-canvas-elevated]="currentStrokeStyle() !== 'dotted'"
-              [class.text-slate-300]="currentStrokeStyle() !== 'dotted'"
-              class="px-2 py-1 rounded-md text-[10px] font-medium border border-canvas-border hover:bg-canvas-hover transition flex-1"
-            >
-              Dotted
-            </button>
+            <!-- Stroke Width Presets -->
+            <div class="flex items-center gap-1 mt-2">
+              <span class="text-slate-400 mr-2 text-[11px]">Width:</span>
+              @for (w of strokeWidthPresets; track w) {
+                <button
+                  type="button"
+                  (click)="updateStrokeWidth(w)"
+                  [class.bg-blue-600]="currentStrokeWidth() === w"
+                  [class.text-white]="currentStrokeWidth() === w"
+                  [class.bg-canvas-elevated]="currentStrokeWidth() !== w"
+                  [class.text-slate-300]="currentStrokeWidth() !== w"
+                  class="px-2.5 py-1 rounded-md text-[11px] font-mono border border-canvas-border hover:bg-canvas-hover transition"
+                >
+                  {{ w }}px
+                </button>
+              }
+            </div>
+
+            <!-- Stroke Style Presets -->
+            <div class="flex items-center gap-1 mt-1.5">
+              <span class="text-slate-400 mr-2 text-[11px]">Style:</span>
+              <button
+                type="button"
+                (click)="updateStrokeStyle('solid')"
+                [class.bg-blue-600]="currentStrokeStyle() === 'solid'"
+                [class.text-white]="currentStrokeStyle() === 'solid'"
+                [class.bg-canvas-elevated]="currentStrokeStyle() !== 'solid'"
+                [class.text-slate-300]="currentStrokeStyle() !== 'solid'"
+                class="px-2 py-1 rounded-md text-[10px] font-medium border border-canvas-border hover:bg-canvas-hover transition flex-1"
+              >
+                Solid
+              </button>
+              <button
+                type="button"
+                (click)="updateStrokeStyle('dashed')"
+                [class.bg-blue-600]="currentStrokeStyle() === 'dashed'"
+                [class.text-white]="currentStrokeStyle() === 'dashed'"
+                [class.bg-canvas-elevated]="currentStrokeStyle() !== 'dashed'"
+                [class.text-slate-300]="currentStrokeStyle() !== 'dashed'"
+                class="px-2 py-1 rounded-md text-[10px] font-medium border border-canvas-border hover:bg-canvas-hover transition flex-1"
+              >
+                Dashed
+              </button>
+              <button
+                type="button"
+                (click)="updateStrokeStyle('dotted')"
+                [class.bg-blue-600]="currentStrokeStyle() === 'dotted'"
+                [class.text-white]="currentStrokeStyle() === 'dotted'"
+                [class.bg-canvas-elevated]="currentStrokeStyle() !== 'dotted'"
+                [class.text-slate-300]="currentStrokeStyle() !== 'dotted'"
+                class="px-2 py-1 rounded-md text-[10px] font-medium border border-canvas-border hover:bg-canvas-hover transition flex-1"
+              >
+                Dotted
+              </button>
+            </div>
           </div>
-        </div>
+        }
 
         <!-- Opacity Slider -->
         <div class="flex flex-col gap-1">
@@ -248,6 +267,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
             <div class="flex items-center gap-1.5 flex-wrap">
               @for (size of fontSizePresets; track size) {
                 <button
+                  type="button"
                   (click)="updateFontSize(size)"
                   [class.bg-blue-600]="currentFontSize() === size"
                   [class.text-white]="currentFontSize() === size"
@@ -263,6 +283,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
             <!-- Alignment -->
             <div class="flex items-center gap-1 mt-1">
               <button
+                type="button"
                 (click)="updateAlign('left')"
                 [class.bg-blue-600]="currentAlign() === 'left'"
                 [class.text-white]="currentAlign() === 'left'"
@@ -278,6 +299,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
                 </svg>
               </button>
               <button
+                type="button"
                 (click)="updateAlign('center')"
                 [class.bg-blue-600]="currentAlign() === 'center'"
                 [class.text-white]="currentAlign() === 'center'"
@@ -293,6 +315,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
                 </svg>
               </button>
               <button
+                type="button"
                 (click)="updateAlign('right')"
                 [class.bg-blue-600]="currentAlign() === 'right'"
                 [class.text-white]="currentAlign() === 'right'"
@@ -316,6 +339,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
           <span class="text-slate-400 font-medium">Layer Order</span>
           <div class="grid grid-cols-2 gap-1.5">
             <button
+              type="button"
               (click)="bridge.reorderSelected('bringForward')"
               class="px-2 py-1.5 rounded-lg bg-canvas-elevated hover:bg-canvas-hover border border-canvas-border text-slate-300 hover:text-white transition text-left flex items-center gap-1.5"
             >
@@ -325,6 +349,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
               <span>Bring Forward</span>
             </button>
             <button
+              type="button"
               (click)="bridge.reorderSelected('sendBackward')"
               class="px-2 py-1.5 rounded-lg bg-canvas-elevated hover:bg-canvas-hover border border-canvas-border text-slate-300 hover:text-white transition text-left flex items-center gap-1.5"
             >
@@ -356,6 +381,12 @@ export class PropertiesPanelComponent {
     return obj.type !== 'line' && obj.type !== 'arrow';
   });
 
+  readonly showStrokeSection = computed(() => {
+    const obj = this.singleObject();
+    if (!obj) return true;
+    return obj.type !== 'text';
+  });
+
   readonly isTextType = computed(() => {
     const obj = this.singleObject();
     return obj?.type === 'text' || obj?.type === 'sticky';
@@ -363,22 +394,30 @@ export class PropertiesPanelComponent {
 
   readonly currentFill = computed(() => {
     const obj = this.singleObject();
-    return obj && 'fillColor' in obj ? obj.fillColor : '#3b82f6';
+    if (!obj) return '#3b82f6';
+    if ('fillColor' in obj) return obj.fillColor;
+    return '#3b82f6';
   });
 
   readonly currentStroke = computed(() => {
     const obj = this.singleObject();
-    return obj && 'strokeColor' in obj ? obj.strokeColor : '#ffffff';
+    if (!obj) return '#ffffff';
+    if ('strokeColor' in obj) return obj.strokeColor;
+    return '#ffffff';
   });
 
   readonly currentStrokeWidth = computed(() => {
     const obj = this.singleObject();
-    return obj && 'strokeWidth' in obj ? obj.strokeWidth : 2;
+    if (!obj) return 2;
+    if ('strokeWidth' in obj) return obj.strokeWidth;
+    return 2;
   });
 
-  readonly currentStrokeStyle = computed(() => {
+  readonly currentStrokeStyle = computed<StrokeStyle>(() => {
     const obj = this.singleObject();
-    return obj && 'strokeStyle' in obj ? obj.strokeStyle : 'solid';
+    if (!obj) return 'solid';
+    if ('strokeStyle' in obj) return obj.strokeStyle;
+    return 'solid';
   });
 
   readonly currentOpacity = computed(() => {
@@ -391,40 +430,40 @@ export class PropertiesPanelComponent {
     return obj && 'fontSize' in obj ? obj.fontSize : 16;
   });
 
-  readonly currentAlign = computed(() => {
+  readonly currentAlign = computed<TextAlign>(() => {
     const obj = this.singleObject() as TextObject | StickyNoteObject | null;
-    return obj && 'align' in obj ? obj.align : 'center';
+    return obj && 'textAlign' in obj ? obj.textAlign : 'center';
   });
 
   updateProp(key: keyof CanvasObject, value: unknown): void {
-    this.bridge.updateSelectedProperties({ [key]: value });
+    this.bridge.updateSelectedProperties({ [key]: value } as Partial<CanvasObject>);
   }
 
-  updateFill(fill: string): void {
-    this.bridge.updateSelectedStyle({ fillColor: fill });
+  updateFill(fillColor: string): void {
+    this.bridge.updateSelectedStyle({ fillColor });
   }
 
-  updateStroke(stroke: string): void {
-    this.bridge.updateSelectedStyle({ strokeColor: stroke });
+  updateStroke(strokeColor: string): void {
+    this.bridge.updateSelectedStyle({ strokeColor });
   }
 
   updateStrokeWidth(strokeWidth: number): void {
     this.bridge.updateSelectedStyle({ strokeWidth });
   }
 
-  updateStrokeStyle(strokeStyle: 'solid' | 'dashed' | 'dotted'): void {
+  updateStrokeStyle(strokeStyle: StrokeStyle): void {
     this.bridge.updateSelectedStyle({ strokeStyle });
   }
 
   updateOpacity(opacity: number): void {
-    this.bridge.updateSelectedProperties({ opacity });
+    this.bridge.updateSelectedProperties({ opacity } as Partial<CanvasObject>);
   }
 
   updateFontSize(fontSize: number): void {
     this.bridge.updateSelectedProperties({ fontSize } as Partial<CanvasObject>);
   }
 
-  updateAlign(align: 'left' | 'center' | 'right'): void {
-    this.bridge.updateSelectedProperties({ align } as Partial<CanvasObject>);
+  updateAlign(textAlign: TextAlign): void {
+    this.bridge.updateSelectedProperties({ textAlign } as Partial<CanvasObject>);
   }
 }
