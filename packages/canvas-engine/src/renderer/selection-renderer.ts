@@ -3,16 +3,11 @@
  * Renders selection outlines, transform handles, rotation stems, and marquee boxes.
  */
 import {
-  CameraState,
   DEFAULT_OBJECT_COLORS,
-  HandleType,
-  IBoundingBox,
-  Point,
   Rect,
   Size
 } from '@alignify/shared-types';
 import { Camera } from '../camera/camera';
-import { Bounds } from '../math/bounds';
 import { HitTest } from '../math/hit-test';
 import { SelectionManager } from '../selection/selection-manager';
 
@@ -34,7 +29,6 @@ export class SelectionRenderer {
     const selected = selection.getSelectedObjects();
     const selectionColor = options.selectionColor ?? DEFAULT_OBJECT_COLORS.selection;
     const handleSize = options.handleSize ?? 8;
-    const zoom = camera.zoom;
 
     // 1. Render rubberband / marquee selection box if active (marqueeBox in world coords)
     if (marqueeBox) {
@@ -126,37 +120,18 @@ export class SelectionRenderer {
     ctx.lineTo(0, -halfH - rotDist);
     ctx.stroke();
 
-    // Rotation handle circle
-    ctx.beginPath();
-    ctx.arc(0, -halfH - rotDist, handleSize / 2 + 1, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    // Rotation circular handle
+    this.drawHandleCircle(ctx, 0, -halfH - rotDist, handleSize / 2, color);
 
-    // 8 Resize handle squares
-    const hs = handleSize;
-    const halfHs = hs / 2;
-
-    const handlePositions = [
-      { x: -halfW, y: -halfH }, // nw
-      { x: 0, y: -halfH },      // n
-      { x: halfW, y: -halfH },  // ne
-      { x: halfW, y: 0 },       // e
-      { x: halfW, y: halfH },   // se
-      { x: 0, y: halfH },       // s
-      { x: -halfW, y: halfH },  // sw
-      { x: -halfW, y: 0 }       // w
-    ];
-
-    for (const pos of handlePositions) {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(pos.x - halfHs, pos.y - halfHs, hs, hs);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(pos.x - halfHs, pos.y - halfHs, hs, hs);
-    }
+    // 8 resize square handles
+    this.drawHandleSquare(ctx, -halfW, -halfH, handleSize, color); // NW
+    this.drawHandleSquare(ctx, 0, -halfH, handleSize, color);      // N
+    this.drawHandleSquare(ctx, halfW, -halfH, handleSize, color);  // NE
+    this.drawHandleSquare(ctx, halfW, 0, handleSize, color);       // E
+    this.drawHandleSquare(ctx, halfW, halfH, handleSize, color);   // SE
+    this.drawHandleSquare(ctx, 0, halfH, handleSize, color);       // S
+    this.drawHandleSquare(ctx, -halfW, halfH, handleSize, color);  // SW
+    this.drawHandleSquare(ctx, -halfW, 0, handleSize, color);      // W
 
     ctx.restore();
   }
@@ -172,34 +147,11 @@ export class SelectionRenderer {
     color: string,
     handleSize: number
   ): void {
-    const p1Screen = camera.worldToScreen({ x: x1, y: y1 }, viewportSize);
-    const p2Screen = camera.worldToScreen({ x: x2, y: y2 }, viewportSize);
+    const p1 = camera.worldToScreen({ x: x1, y: y1 }, viewportSize);
+    const p2 = camera.worldToScreen({ x: x2, y: y2 }, viewportSize);
 
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-
-    ctx.beginPath();
-    ctx.moveTo(p1Screen.x, p1Screen.y);
-    ctx.lineTo(p2Screen.x, p2Screen.y);
-    ctx.stroke();
-
-    // Start & End handle circles
-    const hs = handleSize / 2 + 1;
-
-    for (const p of [p1Screen, p2Screen]) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, hs, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([]);
-      ctx.stroke();
-    }
-
-    ctx.restore();
+    this.drawHandleCircle(ctx, p1.x, p1.y, handleSize / 2, color);
+    this.drawHandleCircle(ctx, p2.x, p2.y, handleSize / 2, color);
   }
 
   private static renderMarquee(
@@ -214,14 +166,46 @@ export class SelectionRenderer {
     const h = marqueeBox.height * camera.zoom;
 
     ctx.save();
-    ctx.fillStyle = DEFAULT_OBJECT_COLORS.selectionFill;
-    ctx.fillRect(p1.x, p1.y, w, h);
-
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
-    ctx.strokeRect(p1.x, p1.y, w, h);
 
+    ctx.fillRect(p1.x, p1.y, w, h);
+    ctx.strokeRect(p1.x, p1.y, w, h);
     ctx.restore();
+  }
+
+  private static drawHandleSquare(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    size: number,
+    borderColor: string
+  ): void {
+    const half = size / 2;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x - half, y - half, size, size);
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.strokeRect(x - half, y - half, size, size);
+  }
+
+  private static drawHandleCircle(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    borderColor: string
+  ): void {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
   }
 }

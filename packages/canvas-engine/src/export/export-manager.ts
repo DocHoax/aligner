@@ -2,7 +2,7 @@
  * Export Manager
  * High-fidelity diagram export for PNG (with HiDPI multipliers), SVG vector format, and JSON schema.
  */
-import { CanvasObject, ExportOptions } from '@alignify/shared-types';
+import { CanvasObject, ExportOptions, STICKY_COLOR_MAP } from '@alignify/shared-types';
 import { Camera } from '../camera/camera';
 import { Bounds } from '../math/bounds';
 import { ObjectStore } from '../objects/object-store';
@@ -21,7 +21,7 @@ export class ExportManager {
    * Export scene as high-resolution PNG
    */
   async exportPNG(options: ExportOptions = {}): Promise<string> {
-    const pixelRatio = options.pixelRatio || 2;
+    const pixelRatio = options.pixelRatio || options.scale || 2;
     const padding = options.padding !== undefined ? options.padding : 32;
     const includeBackground = options.includeBackground !== false;
     const backgroundColor = options.backgroundColor || '#090d16';
@@ -115,9 +115,8 @@ ${svgElements}</svg>`;
       {
         id: 'doc_' + Date.now().toString(36),
         name: docName,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        version: 1,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
         objectCount: objects.length
       },
       objects,
@@ -150,12 +149,7 @@ ${svgElements}</svg>`;
   }
 
   private renderObjectToSVG(obj: CanvasObject, ox: number, oy: number): string {
-    const fill = obj.style.fillColor === 'transparent' ? 'none' : obj.style.fillColor;
-    const stroke = obj.style.strokeColor;
-    const strokeWidth = obj.style.strokeWidth;
-    const opacity = obj.style.opacity;
-    const strokeDash = obj.style.strokeStyle === 'dashed' ? 'stroke-dasharray="6,6"' : '';
-
+    const opacity = obj.opacity ?? 1;
     const rot = obj.rotation;
     const cx = obj.x + obj.width / 2 + ox;
     const cy = obj.y + obj.height / 2 + oy;
@@ -165,53 +159,50 @@ ${svgElements}</svg>`;
       case 'rectangle': {
         const x = obj.x + ox;
         const y = obj.y + oy;
-        const rx = obj.style.cornerRadius || 0;
-        return `  <rect x="${x}" y="${y}" width="${obj.width}" height="${obj.height}" rx="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" opacity="${opacity}" ${strokeDash}${transformAttr} />\n`;
+        const fill = obj.fillColor === 'transparent' ? 'none' : obj.fillColor;
+        const strokeDash = obj.strokeStyle === 'dashed' ? ' stroke-dasharray="6,6"' : '';
+        const rx = obj.cornerRadius || 0;
+        return `  <rect x="${x}" y="${y}" width="${obj.width}" height="${obj.height}" rx="${rx}" fill="${fill}" stroke="${obj.strokeColor}" stroke-width="${obj.strokeWidth}" opacity="${opacity}"${strokeDash}${transformAttr} />\n`;
       }
       case 'ellipse': {
         const x = obj.x + ox;
         const y = obj.y + oy;
+        const fill = obj.fillColor === 'transparent' ? 'none' : obj.fillColor;
+        const strokeDash = obj.strokeStyle === 'dashed' ? ' stroke-dasharray="6,6"' : '';
         const rx = obj.width / 2;
         const ry = obj.height / 2;
-        return `  <ellipse cx="${x + rx}" cy="${y + ry}" rx="${rx}" ry="${ry}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" opacity="${opacity}" ${strokeDash}${transformAttr} />\n`;
+        return `  <ellipse cx="${x + rx}" cy="${y + ry}" rx="${rx}" ry="${ry}" fill="${fill}" stroke="${obj.strokeColor}" stroke-width="${obj.strokeWidth}" opacity="${opacity}"${strokeDash}${transformAttr} />\n`;
       }
       case 'sticky': {
         const x = obj.x + ox;
         const y = obj.y + oy;
-        const color = obj.color || 'yellow';
-        const colorMap: Record<string, string> = {
-          yellow: '#fef08a',
-          pink: '#fbcfe8',
-          blue: '#bfdbfe',
-          green: '#bbf7d0',
-          purple: '#e9d5ff',
-          orange: '#fed7aa'
-        };
-        const bg = colorMap[color] || '#fef08a';
+        const colors = STICKY_COLOR_MAP[obj.stickyColor] || STICKY_COLOR_MAP['yellow'];
         return `  <g${transformAttr}>
-    <rect x="${x}" y="${y}" width="${obj.width}" height="${obj.height}" rx="8" fill="${bg}" opacity="${opacity}" filter="drop-shadow(0 4px 6px rgba(0,0,0,0.1))" />
-    <text x="${x + 16}" y="${y + 32}" fill="#1e293b" font-size="${obj.fontSize || 16}" class="diagram-text">${this.escapeXml(obj.text || '')}</text>
+    <rect x="${x}" y="${y}" width="${obj.width}" height="${obj.height}" rx="8" fill="${colors.bg}" stroke="${colors.border}" stroke-width="1" opacity="${opacity}" filter="drop-shadow(0 4px 6px rgba(0,0,0,0.1))" />
+    <text x="${x + 16}" y="${y + 32}" fill="${obj.textColor || colors.text}" font-size="${obj.fontSize || 16}" class="diagram-text">${this.escapeXml(obj.text || '')}</text>
   </g>\n`;
       }
       case 'text': {
         const x = obj.x + ox;
         const y = obj.y + oy + (obj.fontSize || 16);
-        return `  <text x="${x}" y="${y}" fill="${stroke}" font-size="${obj.fontSize || 16}" font-weight="${obj.fontWeight || 'normal'}" opacity="${opacity}" class="diagram-text"${transformAttr}>${this.escapeXml(obj.text || '')}</text>\n`;
+        return `  <text x="${x}" y="${y}" fill="${obj.textColor}" font-size="${obj.fontSize || 16}" font-weight="${obj.fontWeight || 'normal'}" opacity="${opacity}" class="diagram-text"${transformAttr}>${this.escapeXml(obj.text || '')}</text>\n`;
       }
       case 'line': {
         const x1 = obj.x + ox;
         const y1 = obj.y + oy;
         const x2 = obj.x2 + ox;
         const y2 = obj.y2 + oy;
-        return `  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${strokeWidth}" opacity="${opacity}" ${strokeDash} />\n`;
+        const strokeDash = obj.strokeStyle === 'dashed' ? ' stroke-dasharray="6,6"' : '';
+        return `  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${obj.strokeColor}" stroke-width="${obj.strokeWidth}" opacity="${opacity}"${strokeDash} />\n`;
       }
       case 'arrow': {
         const x1 = obj.x + ox;
         const y1 = obj.y + oy;
         const x2 = obj.x2 + ox;
         const y2 = obj.y2 + oy;
+        const strokeDash = obj.strokeStyle === 'dashed' ? ' stroke-dasharray="6,6"' : '';
         return `  <g opacity="${opacity}">
-    <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${strokeWidth}" ${strokeDash} />
+    <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${obj.strokeColor}" stroke-width="${obj.strokeWidth}"${strokeDash} />
   </g>\n`;
       }
       default:

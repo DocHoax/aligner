@@ -119,10 +119,11 @@ export class CanvasRenderer2D {
     ctx.translate(-camera.x, -camera.y);
 
     // Viewport Frustum Culling
-    const visibleWorldBounds = camera.getVisibleWorldBounds(this.viewportSize);
+    const vb = camera.getVisibleWorldBounds(this.viewportSize);
+    const visibleBox = new Bounds(vb.minX, vb.minY, vb.maxX, vb.maxY);
     const visibleObjects = store.getAll().filter((obj) => {
       const b = Bounds.fromObject(obj);
-      return b.intersects(visibleWorldBounds);
+      return b.intersects(visibleBox);
     });
 
     // 4. Render Scene Objects (in zIndex order)

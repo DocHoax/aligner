@@ -4,20 +4,16 @@
  * Tools, History, Renderer, Clipboard, Storage, and Reactive Event Bus.
  */
 import {
-  CameraState,
-  CanvasDocument,
   CanvasObject,
   DocumentMeta,
   ObjectStyle,
   Point,
-  Size,
   ToolType
 } from '@alignify/shared-types';
 import { Camera } from '../camera/camera';
 import { ClipboardManager } from '../clipboard/clipboard-manager';
 import { ExportManager } from '../export/export-manager';
 import { CommandStack } from '../history/command-stack';
-import { CreateObjectCommand } from '../history/create-object.command';
 import { DeleteObjectsCommand } from '../history/delete-objects.command';
 import { ReorderObjectsCommand } from '../history/reorder-objects.command';
 import { UpdatePropertiesCommand } from '../history/update-properties.command';
@@ -57,9 +53,8 @@ export class CanvasEngine {
   private currentDocumentMeta: DocumentMeta = {
     id: 'doc_' + Date.now().toString(36),
     name: 'Untitled Architecture Diagram',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    version: 1,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
     objectCount: 0
   };
 
@@ -235,18 +230,7 @@ export class CanvasEngine {
   }
 
   updateSelectedStyle(styleUpdates: Partial<ObjectStyle>): void {
-    const selected = this.selection.getSelectedObjects();
-    if (selected.length === 0) return;
-
-    const updates = selected.map((obj) => ({
-      id: obj.id,
-      before: { style: { ...obj.style } },
-      after: { style: { ...obj.style, ...styleUpdates } }
-    }));
-
-    const cmd = new UpdatePropertiesCommand(this.store, 'Update style', updates);
-    this.history.execute(cmd);
-    this.renderLoop.requestRender();
+    this.updateSelectedProperties(styleUpdates as Partial<CanvasObject>);
   }
 
   updateSelectedProperties(properties: Partial<CanvasObject>): void {
@@ -275,8 +259,8 @@ export class CanvasEngine {
     if (selected.length === 0) return;
 
     const ids = selected.map((o) => o.id);
-    const cmd = new ReorderObjectsCommand(this.store, ids, action);
-    this.history.execute(cmd);
+    const cmd = ReorderObjectsCommand.create(this.store, ids, action);
+    this.history.record(cmd);
     this.renderLoop.requestRender();
   }
 
@@ -312,18 +296,14 @@ export class CanvasEngine {
   }
 
   resetZoom(): void {
-    this.camera.zoom = 1;
+    this.camera.setState({ zoom: 1 });
     this.renderLoop.requestRender();
   }
 
   fitToContent(padding = 64): void {
     const objects = this.store.getAll();
-    if (objects.length === 0) {
-      this.camera.panTo(0, 0);
-      this.camera.zoom = 1;
-    } else {
-      this.camera.fitToObjects(objects, this.renderer.getViewportSize(), padding);
-    }
+    const viewport = this.renderer.getViewportSize();
+    this.camera.fitToObjects(objects, viewport, padding);
     this.renderLoop.requestRender();
   }
 
@@ -332,15 +312,13 @@ export class CanvasEngine {
     this.store.clear();
     this.selection.clear();
     this.history.clear();
-    this.camera.panTo(0, 0);
-    this.camera.zoom = 1;
+    this.camera.setState({ x: 0, y: 0, zoom: 1 });
 
     this.currentDocumentMeta = {
       id: 'doc_' + Date.now().toString(36),
       name,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      version: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
       objectCount: 0
     };
 
@@ -350,7 +328,7 @@ export class CanvasEngine {
 
   async saveDocument(): Promise<void> {
     const objects = this.store.getAll();
-    this.currentDocumentMeta.updatedAt = new Date().toISOString();
+    this.currentDocumentMeta.updatedAt = Date.now();
     this.currentDocumentMeta.objectCount = objects.length;
 
     const doc = DocumentSerializer.serialize(
@@ -367,8 +345,8 @@ export class CanvasEngine {
     const doc = await this.storage.loadDocument(id);
     if (!doc) return false;
 
-    const { meta, objects, camera } = DocumentSerializer.deserialize(doc);
-    this.store.load(objects);
+    const { meta, objects, camera } = DocumentSerializer.deserialize(doc as unknown as Record<string, unknown>);
+    this.store.reset(objects);
     this.selection.clear();
     this.history.clear();
 
@@ -382,7 +360,7 @@ export class CanvasEngine {
 
   async loadFromJSON(jsonString: string): Promise<void> {
     const { meta, objects, camera } = DocumentSerializer.deserialize(jsonString);
-    this.store.load(objects);
+    this.store.reset(objects);
     this.selection.clear();
     this.history.clear();
 
@@ -399,31 +377,31 @@ export class CanvasEngine {
 
   setDocumentName(name: string): void {
     this.currentDocumentMeta.name = name;
-    this.currentDocumentMeta.updatedAt = new Date().toISOString();
+    this.currentDocumentMeta.updatedAt = Date.now();
     this.eventBus.emit('document_changed', this.currentDocumentMeta);
     this.saveDocument();
   }
 
   // --- Subsystem Event Coordination ---
   private setupSubsystemListeners(): void {
-    this.store.onChange(() => {
+    this.store.subscribe(() => {
       this.currentDocumentMeta.objectCount = this.store.getAll().length;
       this.eventBus.emit('store_changed', this.store.getAll());
       this.renderLoop.requestRender();
     });
 
-    this.selection.onChange(() => {
+    this.selection.subscribe(() => {
       const selected = this.selection.getSelectedObjects();
       this.eventBus.emit('selection_changed', selected);
       this.renderLoop.requestRender();
     });
 
-    this.camera.onChange((state) => {
+    this.camera.subscribe((state) => {
       this.eventBus.emit('camera_changed', state);
       this.renderLoop.requestRender();
     });
 
-    this.history.onChange((state) => {
+    this.history.subscribe((state) => {
       this.eventBus.emit('history_changed', state);
     });
 
