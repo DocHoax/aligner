@@ -199,9 +199,7 @@ export class ShapeRenderer {
     }
 
     const topOffset = y + padding + 10;
-    const words = text.split(' ');
     const lines: string[] = [];
-    let currentLine = '';
 
     for (const paragraph of text.split('\n')) {
       const paraWords = paragraph.split(' ');

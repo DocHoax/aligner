@@ -11,7 +11,6 @@ import {
 import { CreateObjectCommand } from '../history/create-object.command';
 import { CommandStack } from '../history/command-stack';
 import { Snap } from '../math/snap';
-import { Vec2 } from '../math/vec2';
 import { ObjectFactory } from '../objects/object-factory';
 import { ObjectStore } from '../objects/object-store';
 import { SelectionManager } from '../selection/selection-manager';

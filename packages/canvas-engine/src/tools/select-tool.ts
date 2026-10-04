@@ -131,7 +131,7 @@ export class SelectTool implements ITool {
     if (this.mode === 'dragging_objects') {
       this.handleDragObjects(world, event.shiftKey);
     } else if (this.mode === 'resizing') {
-      this.handleResize(world, event.shiftKey, event.altKey);
+      this.handleResize(world, event.shiftKey);
     } else if (this.mode === 'rotating') {
       this.handleRotate(world, event.shiftKey);
     } else if (this.mode === 'dragging_endpoint') {
@@ -241,7 +241,7 @@ export class SelectTool implements ITool {
     }
   }
 
-  private handleResize(world: Point, shiftKey: boolean, altKey: boolean): void {
+  private handleResize(world: Point, shiftKey: boolean): void {
     if (!this.activeHandle) return;
     const selected = this.selection.getSelectedObjects();
     if (selected.length !== 1) return; // Single object resize for crisp precision

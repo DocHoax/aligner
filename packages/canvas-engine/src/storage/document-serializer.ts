@@ -21,14 +21,15 @@ export class DocumentSerializer {
       version: CURRENT_DOCUMENT_SCHEMA_VERSION,
       id: meta.id,
       name: meta.name,
-      createdAt: meta.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: typeof meta.createdAt === 'number' ? meta.createdAt : Date.now(),
+      updatedAt: Date.now(),
       camera: {
         x: camera.x,
         y: camera.y,
         zoom: camera.zoom
       },
-      objects: JSON.parse(JSON.stringify(objects))
+      objects: JSON.parse(JSON.stringify(objects)),
+      metadata: {}
     };
   }
 
@@ -55,12 +56,23 @@ export class DocumentSerializer {
     const version = (parsed['version'] as number) || 1;
     const migrated = this.migrate(parsed, version);
 
+    const createdAt = typeof migrated['createdAt'] === 'number'
+      ? migrated['createdAt']
+      : typeof migrated['createdAt'] === 'string'
+      ? new Date(migrated['createdAt'] as string).getTime()
+      : Date.now();
+
+    const updatedAt = typeof migrated['updatedAt'] === 'number'
+      ? migrated['updatedAt']
+      : typeof migrated['updatedAt'] === 'string'
+      ? new Date(migrated['updatedAt'] as string).getTime()
+      : Date.now();
+
     const meta: DocumentMeta = {
       id: (migrated['id'] as string) || 'doc_' + Date.now().toString(36),
       name: (migrated['name'] as string) || 'Untitled Diagram',
-      createdAt: (migrated['createdAt'] as string) || new Date().toISOString(),
-      updatedAt: (migrated['updatedAt'] as string) || new Date().toISOString(),
-      version: CURRENT_DOCUMENT_SCHEMA_VERSION,
+      createdAt,
+      updatedAt,
       objectCount: Array.isArray(migrated['objects']) ? migrated['objects'].length : 0
     };
 

@@ -112,13 +112,9 @@ export class IndexedDBStorage {
                 name: d.name,
                 createdAt: d.createdAt,
                 updatedAt: d.updatedAt,
-                version: d.version,
                 objectCount: d.objects ? d.objects.length : 0
               }))
-              .sort(
-                (a, b) =>
-                  new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-              );
+              .sort((a, b) => b.updatedAt - a.updatedAt);
             resolve(metas);
           };
           request.onerror = () => reject(request.error);
@@ -197,16 +193,13 @@ export class IndexedDBStorage {
           metas.push({
             id: doc.id,
             name: doc.name,
-            createdAt: doc.createdAt,
-            updatedAt: doc.updatedAt,
-            version: doc.version,
+            createdAt: typeof doc.createdAt === 'number' ? doc.createdAt : Date.now(),
+            updatedAt: typeof doc.updatedAt === 'number' ? doc.updatedAt : Date.now(),
             objectCount: doc.objects ? doc.objects.length : 0
           });
         }
       }
-      return metas.sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
+      return metas.sort((a, b) => b.updatedAt - a.updatedAt);
     } catch {
       return [];
     }

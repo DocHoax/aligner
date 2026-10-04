@@ -3,7 +3,6 @@
  */
 import { CanvasObject, HandleType, Point, ResizeHandleInfo } from '@alignify/shared-types';
 import { Vec2 } from './vec2';
-import { Bounds } from './bounds';
 
 export class HitTest {
   /**
