@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "npm --workspace=apps/web run start",
     "build": "npm run build:packages && npm --workspace=apps/web run build",
-    "build:packages": "npm --workspace=packages/shared-types run build && npm --workspace=packages/canvas-engine run build",
+    "build:packages": "npm --workspace=packages/shared-types run build && npm --workspace=packages/ui run build && npm --workspace=packages/protocol run build && npm --workspace=packages/canvas-engine run build",
     "test": "npm run test:packages && npm --workspace=apps/web run test:ci",
     "test:packages": "vitest run --dir packages",
     "test:watch": "vitest --dir packages",
