@@ -55,16 +55,14 @@ export class ClipboardManager {
     const dy = customOffset ? customOffset.y : defaultOffset;
 
     const newObjects: CanvasObject[] = this.clipboard.map((obj) => {
-      const cloned: CanvasObject = JSON.parse(JSON.stringify(obj));
-      cloned.id = this.generateId();
-      cloned.x += dx;
-      cloned.y += dy;
+      const cloned = JSON.parse(JSON.stringify(obj)) as CanvasObject;
+      const newId = this.generateId();
+      let updated = { ...cloned, id: newId, x: cloned.x + dx, y: cloned.y + dy };
 
-      if (cloned.type === 'line' || cloned.type === 'arrow') {
-        cloned.x2 += dx;
-        cloned.y2 += dy;
+      if (updated.type === 'line' || updated.type === 'arrow') {
+        updated = { ...updated, x2: updated.x2 + dx, y2: updated.y2 + dy };
       }
-      return cloned;
+      return updated as CanvasObject;
     });
 
     const cmd = new CreateObjectCommand(this.store, newObjects);
@@ -83,16 +81,14 @@ export class ClipboardManager {
     const dy = 20;
 
     const newObjects: CanvasObject[] = selected.map((obj) => {
-      const cloned: CanvasObject = JSON.parse(JSON.stringify(obj));
-      cloned.id = this.generateId();
-      cloned.x += dx;
-      cloned.y += dy;
+      const cloned = JSON.parse(JSON.stringify(obj)) as CanvasObject;
+      const newId = this.generateId();
+      let updated = { ...cloned, id: newId, x: cloned.x + dx, y: cloned.y + dy };
 
-      if (cloned.type === 'line' || cloned.type === 'arrow') {
-        cloned.x2 += dx;
-        cloned.y2 += dy;
+      if (updated.type === 'line' || updated.type === 'arrow') {
+        updated = { ...updated, x2: updated.x2 + dx, y2: updated.y2 + dy };
       }
-      return cloned;
+      return updated as CanvasObject;
     });
 
     const cmd = new CreateObjectCommand(this.store, newObjects);

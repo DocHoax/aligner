@@ -268,6 +268,10 @@ export interface BoardSummary {
   thumbnail?: string;
 }
 
+export type CanvasDocument = BoardDocument;
+export type DocumentMeta = BoardSummary;
+export type DocumentMetadata = BoardMetadata;
+
 // ==========================================
 // 7. Export Types
 // ==========================================
