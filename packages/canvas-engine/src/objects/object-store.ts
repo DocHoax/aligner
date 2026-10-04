@@ -4,9 +4,11 @@
  * z-index ordering, and fine-grained change subscriptions.
  */
 import { CanvasObject, IBoundingBox } from '@alignify/shared-types';
+import { DocumentOperation } from '@alignify/protocol';
 import { Bounds } from '../math/bounds';
 
 export type StoreChangeListener = (event: StoreChangeEvent) => void;
+export type LocalOperationListener = (op: DocumentOperation) => void;
 
 export interface StoreChangeEvent {
   type: 'add' | 'update' | 'remove' | 'reset' | 'reorder';
@@ -17,6 +19,8 @@ export interface StoreChangeEvent {
 export class ObjectStore {
   private readonly objectsMap = new Map<string, CanvasObject>();
   private readonly listeners = new Set<StoreChangeListener>();
+  private readonly operationListeners = new Set<LocalOperationListener>();
+  private isApplyingRemote = false;
   private nextZIndex = 0;
 
   constructor(initialObjects: CanvasObject[] = []) {
@@ -59,6 +63,10 @@ export class ObjectStore {
 
     this.objectsMap.set(object.id, object);
     this.notify({ type: 'add', objects: [object] });
+
+    if (!this.isApplyingRemote) {
+      this.emitLocalOperation({ op: 'create', object });
+    }
   }
 
   addMany(objects: CanvasObject[]): void {
@@ -72,6 +80,17 @@ export class ObjectStore {
       this.objectsMap.set(obj.id, obj);
     }
     this.notify({ type: 'add', objects });
+
+    if (!this.isApplyingRemote) {
+      if (objects.length === 1) {
+        this.emitLocalOperation({ op: 'create', object: objects[0]! });
+      } else {
+        this.emitLocalOperation({
+          op: 'batch',
+          operations: objects.map((obj) => ({ op: 'create', object: obj }))
+        });
+      }
+    }
   }
 
   update(id: string, updates: Partial<CanvasObject>): CanvasObject | undefined {
@@ -86,6 +105,10 @@ export class ObjectStore {
 
     this.objectsMap.set(id, updated);
     this.notify({ type: 'update', objects: [updated] });
+
+    if (!this.isApplyingRemote) {
+      this.emitLocalOperation({ op: 'update', id, changes: updates });
+    }
     return updated;
   }
 
@@ -109,6 +132,21 @@ export class ObjectStore {
 
     if (changed.length > 0) {
       this.notify({ type: 'update', objects: changed });
+
+      if (!this.isApplyingRemote) {
+        if (updates.length === 1) {
+          this.emitLocalOperation({
+            op: 'update',
+            id: updates[0]!.id,
+            changes: updates[0]!.changes
+          });
+        } else {
+          this.emitLocalOperation({
+            op: 'batch',
+            operations: updates.map((u) => ({ op: 'update', id: u.id, changes: u.changes }))
+          });
+        }
+      }
     }
     return changed;
   }
@@ -119,6 +157,10 @@ export class ObjectStore {
 
     this.objectsMap.delete(id);
     this.notify({ type: 'remove', objects: [existing], ids: [id] });
+
+    if (!this.isApplyingRemote) {
+      this.emitLocalOperation({ op: 'delete', id });
+    }
     return existing;
   }
 
@@ -137,6 +179,17 @@ export class ObjectStore {
 
     if (removed.length > 0) {
       this.notify({ type: 'remove', objects: removed, ids: removedIds });
+
+      if (!this.isApplyingRemote) {
+        if (removedIds.length === 1) {
+          this.emitLocalOperation({ op: 'delete', id: removedIds[0]! });
+        } else {
+          this.emitLocalOperation({
+            op: 'batch',
+            operations: removedIds.map((id) => ({ op: 'delete', id }))
+          });
+        }
+      }
     }
     return removed;
   }
@@ -261,6 +314,114 @@ export class ObjectStore {
   subscribe(listener: StoreChangeListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Subscribes to local operations to broadcast them to collaborators.
+   * Remote operations do not trigger this listener.
+   */
+  onLocalOperation(listener: LocalOperationListener): () => void {
+    this.operationListeners.add(listener);
+    return () => this.operationListeners.delete(listener);
+  }
+
+  /**
+   * Applies an incoming remote operation directly to the object store
+   * without affecting the local user's undo/redo history stack and
+   * without re-broadcasting the operation.
+   */
+  applyRemoteOperation(op: DocumentOperation): void {
+    if (!op) return;
+
+    this.isApplyingRemote = true;
+    try {
+      this.executeOperation(op);
+    } finally {
+      this.isApplyingRemote = false;
+    }
+  }
+
+  private executeOperation(op: DocumentOperation): void {
+    switch (op.op) {
+      case 'create': {
+        if (this.objectsMap.has(op.object.id)) {
+          this.update(op.object.id, op.object);
+        } else {
+          this.add(op.object);
+        }
+        break;
+      }
+
+      case 'delete': {
+        this.remove(op.id);
+        break;
+      }
+
+      case 'move': {
+        this.update(op.id, { x: op.x, y: op.y });
+        break;
+      }
+
+      case 'resize': {
+        this.update(op.id, {
+          x: op.x,
+          y: op.y,
+          width: op.width,
+          height: op.height
+        });
+        break;
+      }
+
+      case 'rotate': {
+        this.update(op.id, { rotation: op.rotation });
+        break;
+      }
+
+      case 'update': {
+        this.update(op.id, op.changes);
+        break;
+      }
+
+      case 'group': {
+        for (const childId of op.childIds) {
+          const existing = this.get(childId);
+          if (existing) {
+            this.update(childId, {
+              metadata: { ...existing.metadata, groupId: op.groupId }
+            });
+          }
+        }
+        break;
+      }
+
+      case 'ungroup': {
+        for (const obj of this.getAll()) {
+          if (
+            obj.metadata &&
+            (obj.metadata as Record<string, unknown>)['groupId'] === op.groupId
+          ) {
+            const metadata = { ...obj.metadata };
+            delete (metadata as Record<string, unknown>)['groupId'];
+            this.update(obj.id, { metadata });
+          }
+        }
+        break;
+      }
+
+      case 'batch': {
+        for (const subOp of op.operations) {
+          this.executeOperation(subOp);
+        }
+        break;
+      }
+    }
+  }
+
+  private emitLocalOperation(op: DocumentOperation): void {
+    if (this.isApplyingRemote) return;
+    for (const listener of this.operationListeners) {
+      listener(op);
+    }
   }
 
   private notify(event: StoreChangeEvent): void {
