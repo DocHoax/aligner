@@ -98,12 +98,13 @@ describe('Real-Time Collaboration & Remote Operations', () => {
       operations: [
         { op: 'create', object: objA },
         { op: 'create', object: objB },
-        { op: 'update', id: 'a', changes: { fill: '#ff0000' } }
+        { op: 'update', id: 'a', changes: { fillColor: '#ff0000' } }
       ]
     });
 
     expect(store.count).toBe(2);
-    expect(store.get('a')?.fill).toBe('#ff0000');
+    const updatedA = store.get('a');
+    expect(updatedA?.type === 'rectangle' ? updatedA.fillColor : undefined).toBe('#ff0000');
     expect(store.get('b')?.x).toBe(10);
   });
 

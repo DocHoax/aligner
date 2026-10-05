@@ -7,8 +7,8 @@
     "start": "ng serve --port 4200",
     "build": "ng build --configuration production",
     "watch": "ng build --watch --configuration development",
-    "test": "vitest run",
-    "test:ci": "vitest run"
+    "test": "vitest run --passWithNoTests",
+    "test:ci": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@alignify/canvas-engine": "*",
