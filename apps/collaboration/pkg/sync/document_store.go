@@ -223,3 +223,49 @@ func (s *DocumentStore) GetOperationsSince(sinceSeq int64) ([]protocol.RemoteOpe
 
 	return result, s.seq
 }
+
+// Hydrate populates the document store from a base snapshot and replays subsequent operations.
+func (s *DocumentStore) Hydrate(objects []map[string]interface{}, snapshotSeq int64, ops []protocol.RemoteOperationPayload) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.objects = make(map[string]map[string]interface{})
+	s.order = make([]string, 0, len(objects))
+
+	for _, obj := range objects {
+		idVal, ok := obj["id"]
+		if !ok {
+			continue
+		}
+		idStr, ok := idVal.(string)
+		if !ok || idStr == "" {
+			continue
+		}
+
+		objCopy := make(map[string]interface{}, len(obj))
+		for k, v := range obj {
+			objCopy[k] = v
+		}
+		s.objects[idStr] = objCopy
+		s.order = append(s.order, idStr)
+	}
+
+	s.seq = snapshotSeq
+	s.history = make([]protocol.RemoteOperationPayload, 0, len(ops))
+
+	for _, op := range ops {
+		if err := s.applyOpInternal(op.Operation); err != nil {
+			return fmt.Errorf("failed to replay operation at sequence %d: %w", op.Seq, err)
+		}
+		if op.Seq > s.seq {
+			s.seq = op.Seq
+		}
+		s.history = append(s.history, op)
+	}
+
+	if len(s.history) > s.maxHistory {
+		s.history = s.history[len(s.history)-s.maxHistory:]
+	}
+
+	return nil
+}
