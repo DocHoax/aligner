@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"alignify/collaboration/pkg/models"
 	"alignify/collaboration/pkg/protocol"
 )
 
@@ -39,6 +40,7 @@ type Client struct {
 	UserID    string
 	UserName  string
 	UserColor string
+	Role      models.Role
 	BoardID   string
 	Conn      *websocket.Conn
 	Handler   RoomHandler
@@ -48,11 +50,15 @@ type Client struct {
 }
 
 // NewClient creates a new Client instance.
-func NewClient(userID, userName, userColor, boardID string, conn *websocket.Conn, handler RoomHandler) *Client {
+func NewClient(userID, userName, userColor string, role models.Role, boardID string, conn *websocket.Conn, handler RoomHandler) *Client {
+	if role == "" {
+		role = models.RoleEditor
+	}
 	return &Client{
 		UserID:    userID,
 		UserName:  userName,
 		UserColor: userColor,
+		Role:      role,
 		BoardID:   boardID,
 		Conn:      conn,
 		Handler:   handler,
