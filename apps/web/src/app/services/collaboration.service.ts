@@ -1,4 +1,4 @@
-import { Injectable, signal, computed, OnDestroy } from '@angular/core';
+import { Injectable, signal, computed, OnDestroy, inject } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
 import {
   DocumentOperation,
@@ -16,6 +16,7 @@ import {
   createClientMessage
 } from '@alignify/protocol';
 import { CanvasObject, Point } from '@alignify/shared-types';
+import { AuthService } from './auth.service';
 
 const COLOR_PALETTE = [
   '#3b82f6', // Blue
@@ -45,15 +46,20 @@ const RANDOM_NAMES = [
   providedIn: 'root'
 })
 export class CollaborationService implements OnDestroy {
+  private readonly auth = inject(AuthService);
+
   // --- Reactive Signals ---
   readonly connectionStatus = signal<ConnectionStatus>('DISCONNECTED');
   readonly collaborators = signal<UserPresence[]>([]);
   readonly collaboratorCount = computed(() => this.collaborators().length);
   readonly roomId = signal<string>('board_default');
   readonly currentUser = signal<UserPresence>(this.initLocalUser());
+  readonly userRole = signal<'owner' | 'editor' | 'viewer'>('editor');
+  readonly isViewer = computed(() => this.userRole() === 'viewer');
   readonly lastSyncedSeq = signal<number>(0);
   readonly latencyMs = signal<number>(0);
   readonly isConnected = computed(() => this.connectionStatus() === 'CONNECTED');
+  readonly errorMessage = signal<string | null>(null);
 
   // --- Event Streams for Engine Coordination ---
   private readonly remoteOperationSubject = new Subject<{ userId: string; operation: DocumentOperation; seq: number }>();
@@ -108,6 +114,20 @@ export class CollaborationService implements OnDestroy {
     }
 
     try {
+      const storedUser = localStorage.getItem('alignify_user') || sessionStorage.getItem('alignify_user');
+      if (storedUser) {
+        const u = JSON.parse(storedUser);
+        if (u.id && u.displayName) {
+          return {
+            userId: u.id,
+            userName: u.displayName,
+            userColor: u.avatarColor || COLOR_PALETTE[0]!,
+            selectedIds: [],
+            lastActive: Date.now()
+          };
+        }
+      }
+
       const storedId = sessionStorage.getItem('alignify_user_id');
       const storedName = sessionStorage.getItem('alignify_user_name');
       const storedColor = sessionStorage.getItem('alignify_user_color');
@@ -158,8 +178,24 @@ export class CollaborationService implements OnDestroy {
   // Public Connection Management
   // ==========================================
 
-  connect(customWsUrl?: string): void {
+  connect(customWsUrl?: string, role?: 'owner' | 'editor' | 'viewer'): void {
     if (typeof window === 'undefined') return;
+
+    if (role) {
+      this.userRole.set(role);
+    }
+
+    // Refresh current user if auth user exists
+    const authUser = this.auth.currentUser();
+    if (authUser) {
+      this.currentUser.set({
+        userId: authUser.id,
+        userName: authUser.displayName,
+        userColor: authUser.avatarColor || COLOR_PALETTE[0]!,
+        selectedIds: [],
+        lastActive: Date.now()
+      });
+    }
 
     this.isIntentionallyDisconnected = false;
     this.clearReconnectTimer();
@@ -197,18 +233,19 @@ export class CollaborationService implements OnDestroy {
     this.connectionStatus.set('DISCONNECTED');
   }
 
-  setRoom(newRoomId: string): void {
-    if (!newRoomId || newRoomId === this.roomId()) return;
+  setRoom(newRoomId: string, role?: 'owner' | 'editor' | 'viewer'): void {
+    if (!newRoomId) return;
 
-    this.roomId.set(newRoomId);
-    if (typeof window !== 'undefined' && window.history) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('board', newRoomId);
-      window.history.replaceState({}, '', url.toString());
+    if (role) {
+      this.userRole.set(role);
     }
 
+    if (newRoomId === this.roomId() && this.isConnected()) return;
+
+    this.roomId.set(newRoomId);
+
     if (this.connectionStatus() === 'CONNECTED' || this.connectionStatus() === 'CONNECTING') {
-      this.connect();
+      this.connect(undefined, role);
     }
   }
 
@@ -259,6 +296,10 @@ export class CollaborationService implements OnDestroy {
 
   sendOperation(operation: DocumentOperation): void {
     if (!this.isConnected()) return;
+    if (this.isViewer()) {
+      console.warn('[CollaborationService] Viewers cannot send operations');
+      return;
+    }
 
     this.sendMessage('operation', {
       operation,
@@ -313,9 +354,7 @@ export class CollaborationService implements OnDestroy {
 
   getShareableLink(): string {
     if (typeof window === 'undefined') return '';
-    const url = new URL(window.location.href);
-    url.searchParams.set('board', this.roomId());
-    return url.toString();
+    return `${window.location.origin}/boards/${this.roomId()}`;
   }
 
   // ==========================================
@@ -331,12 +370,18 @@ export class CollaborationService implements OnDestroy {
     }
 
     const user = this.currentUser();
+    const token = this.auth.token() || (typeof window !== 'undefined' ? localStorage.getItem('alignify_token') : null);
+
     const queryParams = new URLSearchParams({
       boardId: this.roomId(),
       userId: user.userId,
       userName: user.userName,
       userColor: user.userColor
     });
+
+    if (token) {
+      queryParams.set('token', token);
+    }
 
     const fullUrl = `${this.wsUrl}?${queryParams.toString()}`;
 
@@ -348,6 +393,7 @@ export class CollaborationService implements OnDestroy {
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
         this.connectionStatus.set('CONNECTED');
+        this.errorMessage.set(null);
         this.setupHeartbeat();
 
         // Send initial join message
@@ -568,7 +614,13 @@ export class CollaborationService implements OnDestroy {
         }
 
         case 'error': {
-          console.warn('[CollaborationService] Server error:', message.payload);
+          const err = message.payload as any;
+          console.warn('[CollaborationService] Server error:', err);
+          if (err?.code === 'INSUFFICIENT_PERMISSIONS') {
+            this.errorMessage.set('You are in view-only mode and cannot edit this board.');
+          } else if (err?.message) {
+            this.errorMessage.set(err.message);
+          }
           break;
         }
       }
