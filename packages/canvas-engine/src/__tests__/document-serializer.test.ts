@@ -7,8 +7,8 @@ describe('Document Serializer', () => {
     const meta = {
       id: 'test-doc-1',
       name: 'System Architecture',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
       version: 1,
       objectCount: 2
     };

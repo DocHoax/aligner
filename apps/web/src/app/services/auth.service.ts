@@ -1,7 +1,7 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Observable, tap, catchError, throwError, map } from 'rxjs';
+import { Observable, tap, catchError, throwError } from 'rxjs';
 import { User, AuthResponse, Workspace } from '../models/auth.models';
 
 const TOKEN_KEY = 'alignify_token';

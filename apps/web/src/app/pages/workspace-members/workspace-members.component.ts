@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { WorkspaceService } from '../../services/workspace.service';
-import { WorkspaceMember, UserRole } from '../../models/auth.models';
+import { UserRole } from '../../models/auth.models';
 
 @Component({
   selector: 'app-workspace-members',

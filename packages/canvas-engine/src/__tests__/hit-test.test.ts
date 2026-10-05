@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { HitTest } from '../math/hit-test';
 import { ObjectFactory } from '../objects/object-factory';
-import { Vec2 } from '../math/vec2';
 
 describe('Spatial Hit-Testing', () => {
   it('hit tests unrotated rectangle', () => {

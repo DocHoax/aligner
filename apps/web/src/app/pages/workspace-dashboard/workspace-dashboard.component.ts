@@ -1,11 +1,11 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { WorkspaceService } from '../../services/workspace.service';
 import { BoardService } from '../../services/board.service';
-import { Workspace, Board, UserRole } from '../../models/auth.models';
+import { Workspace, Board } from '../../models/auth.models';
 
 @Component({
   selector: 'app-workspace-dashboard',
@@ -351,7 +351,6 @@ export class WorkspaceDashboardComponent implements OnInit {
   authService = inject(AuthService);
   workspaceService = inject(WorkspaceService);
   boardService = inject(BoardService);
-  private router = inject(Router);
 
   currentUser = this.authService.currentUser;
   activeWorkspace = this.workspaceService.currentWorkspace;
@@ -370,9 +369,8 @@ export class WorkspaceDashboardComponent implements OnInit {
   ngOnInit(): void {
     this.workspaceService.loadWorkspaces().subscribe({
       next: (workspaces) => {
-        if (workspaces && workspaces.length > 0) {
-          const ws = workspaces[0];
-          this.selectWorkspace(ws);
+        if (workspaces && workspaces.length > 0 && workspaces[0]) {
+          this.selectWorkspace(workspaces[0]);
         }
       }
     });
