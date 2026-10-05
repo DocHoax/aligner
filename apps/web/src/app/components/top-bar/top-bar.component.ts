@@ -1,7 +1,10 @@
 import { Component, ElementRef, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.service';
+import { AuthService } from '../../services/auth.service';
+import { BoardService } from '../../services/board.service';
 
 const AVAILABLE_COLORS = [
   '#3b82f6', // Blue
@@ -18,11 +21,25 @@ const AVAILABLE_COLORS = [
 @Component({
   selector: 'app-top-bar',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <header class="h-12 bg-canvas-panel/95 backdrop-blur-md border-b border-canvas-border px-3 flex items-center justify-between z-30 select-none">
-      <!-- Left: Logo, File Title & Menu Actions -->
+      <!-- Left: Navigation, Logo, File Title & Menu Actions -->
       <div class="flex items-center gap-3">
+        <!-- Back to Workspace Link -->
+        <a
+          routerLink="/workspaces"
+          class="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium text-slate-400 hover:text-white hover:bg-canvas-hover transition"
+          title="Back to Dashboard"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+          </svg>
+          <span class="hidden md:inline">Dashboard</span>
+        </a>
+
+        <div class="h-4 w-px bg-canvas-border"></div>
+
         <!-- Brand / Logo -->
         <div class="flex items-center gap-2 pr-2 border-r border-canvas-border">
           <div class="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-md shadow-blue-500/20">
@@ -35,8 +52,20 @@ const AVAILABLE_COLORS = [
           <span class="font-bold text-sm tracking-tight bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
             Alignify
           </span>
-          <span class="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-400 border border-blue-800/40">
-            Live
+          <!-- Role Badge -->
+          <span
+            class="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border"
+            [class.bg-purple-950-60]="boardService.currentBoardRole() === 'owner'"
+            [class.text-purple-400]="boardService.currentBoardRole() === 'owner'"
+            [class.border-purple-800-40]="boardService.currentBoardRole() === 'owner'"
+            [class.bg-blue-950-60]="boardService.currentBoardRole() === 'editor'"
+            [class.text-blue-400]="boardService.currentBoardRole() === 'editor'"
+            [class.border-blue-800-40]="boardService.currentBoardRole() === 'editor'"
+            [class.bg-slate-800]="boardService.currentBoardRole() === 'viewer'"
+            [class.text-slate-400]="boardService.currentBoardRole() === 'viewer'"
+            [class.border-slate-700]="boardService.currentBoardRole() === 'viewer'"
+          >
+            {{ boardService.currentBoardRole() }}
           </span>
         </div>
 
@@ -46,12 +75,14 @@ const AVAILABLE_COLORS = [
             <button
               (click)="startEditTitle()"
               class="px-2 py-1 rounded text-xs font-medium text-slate-200 hover:bg-canvas-hover hover:text-white transition flex items-center gap-1.5 max-w-[200px] truncate"
-              title="Click to rename diagram"
+              title="Click to rename board"
             >
-              <span class="truncate">{{ bridge.documentMeta().name }}</span>
-              <svg class="w-3 h-3 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-              </svg>
+              <span class="truncate">{{ boardService.currentBoard()?.name || bridge.documentMeta().name }}</span>
+              @if (boardService.currentBoardRole() !== 'viewer') {
+                <svg class="w-3 h-3 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                </svg>
+              }
             </button>
           } @else {
             <input
@@ -67,66 +98,80 @@ const AVAILABLE_COLORS = [
           }
         </div>
 
+        <!-- Read Only Warning for Viewers -->
+        @if (boardService.currentBoardRole() === 'viewer') {
+          <div class="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px]">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            <span>View Only</span>
+          </div>
+        }
+
         <!-- Document File Actions -->
-        <div class="hidden lg:flex items-center gap-1 pl-2 border-l border-canvas-border">
-          <button
-            (click)="bridge.newDocument()"
-            class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition"
-          >
-            New
-          </button>
+        @if (boardService.currentBoardRole() !== 'viewer') {
+          <div class="hidden lg:flex items-center gap-1 pl-2 border-l border-canvas-border">
+            <button
+              (click)="bridge.newDocument()"
+              class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition"
+            >
+              New
+            </button>
 
-          <button
-            (click)="fileInput.click()"
-            class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition"
-          >
-            Open JSON
-          </button>
-          <input
-            #fileInput
-            type="file"
-            accept=".json"
-            (change)="onFileSelected($event)"
-            class="hidden"
-          />
+            <button
+              (click)="fileInput.click()"
+              class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition"
+            >
+              Open JSON
+            </button>
+            <input
+              #fileInput
+              type="file"
+              accept=".json"
+              (change)="onFileSelected($event)"
+              class="hidden"
+            />
 
-          <button
-            (click)="bridge.saveDocument()"
-            class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition flex items-center gap-1"
-          >
-            <span>Save</span>
-          </button>
-        </div>
+            <button
+              (click)="bridge.saveDocument()"
+              class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition flex items-center gap-1"
+            >
+              <span>Save</span>
+            </button>
+          </div>
+        }
       </div>
 
       <!-- Center: Undo/Redo & Real-Time Room Pill -->
       <div class="flex items-center gap-2">
         <!-- Undo / Redo controls -->
-        <div class="flex items-center gap-0.5 bg-canvas-panel border border-canvas-border rounded-lg p-0.5 shadow-sm">
-          <button
-            (click)="bridge.undo()"
-            [disabled]="!bridge.canUndo()"
-            class="p-1.5 rounded text-slate-300 hover:text-white hover:bg-canvas-hover disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition"
-            data-tooltip="Undo (Ctrl+Z)"
-          >
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="1 4 1 10 7 10"></polyline>
-              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-            </svg>
-          </button>
+        @if (boardService.currentBoardRole() !== 'viewer') {
+          <div class="flex items-center gap-0.5 bg-canvas-panel border border-canvas-border rounded-lg p-0.5 shadow-sm">
+            <button
+              (click)="bridge.undo()"
+              [disabled]="!bridge.canUndo()"
+              class="p-1.5 rounded text-slate-300 hover:text-white hover:bg-canvas-hover disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition"
+              data-tooltip="Undo (Ctrl+Z)"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="1 4 1 10 7 10"></polyline>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+              </svg>
+            </button>
 
-          <button
-            (click)="bridge.redo()"
-            [disabled]="!bridge.canRedo()"
-            class="p-1.5 rounded text-slate-300 hover:text-white hover:bg-canvas-hover disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition"
-            data-tooltip="Redo (Ctrl+Y)"
-          >
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-            </svg>
-          </button>
-        </div>
+            <button
+              (click)="bridge.redo()"
+              [disabled]="!bridge.canRedo()"
+              class="p-1.5 rounded text-slate-300 hover:text-white hover:bg-canvas-hover disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition"
+              data-tooltip="Redo (Ctrl+Y)"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+            </button>
+          </div>
+        }
 
         <!-- Room Switcher & Share Link -->
         <div class="relative flex items-center bg-canvas-panel border border-canvas-border rounded-lg px-2 py-1 text-xs text-slate-300 gap-2">
@@ -158,47 +203,6 @@ const AVAILABLE_COLORS = [
               <span>Share</span>
             }
           </button>
-
-          <button
-            (click)="toggleRoomModal()"
-            class="p-0.5 text-slate-400 hover:text-white transition"
-            title="Change active room"
-          >
-            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="1"></circle>
-              <circle cx="12" cy="5" r="1"></circle>
-              <circle cx="12" cy="19" r="1"></circle>
-            </svg>
-          </button>
-
-          <!-- Room Switcher Popover -->
-          @if (isRoomModalOpen()) {
-            <div
-              (click)="$event.stopPropagation()"
-              class="absolute left-0 top-full mt-1.5 w-64 bg-canvas-panel border border-canvas-border rounded-lg shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-100 text-xs"
-            >
-              <div class="font-semibold text-slate-200 mb-2">Switch Board Room</div>
-              <div class="flex gap-1.5 mb-2">
-                <input
-                  type="text"
-                  [ngModel]="newRoomInput()"
-                  (ngModelChange)="newRoomInput.set($event)"
-                  placeholder="e.g. team-diagram-1"
-                  (keydown.enter)="applyNewRoom()"
-                  class="flex-1 px-2 py-1 rounded bg-canvas-elevated border border-canvas-border text-white text-xs focus:outline-none focus:border-blue-500"
-                />
-                <button
-                  (click)="applyNewRoom()"
-                  class="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium"
-                >
-                  Join
-                </button>
-              </div>
-              <div class="text-[11px] text-slate-400">
-                Anyone with the board link can collaborate live in real-time.
-              </div>
-            </div>
-          }
         </div>
       </div>
 
@@ -255,7 +259,7 @@ const AVAILABLE_COLORS = [
           <button
             (click)="toggleProfilePopover()"
             class="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-canvas-hover border border-canvas-border transition"
-            title="Edit your collaborator profile"
+            title="User Profile & Settings"
           >
             <div
               class="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-inner"
@@ -287,7 +291,7 @@ const AVAILABLE_COLORS = [
               />
 
               <label class="block text-[11px] text-slate-400 mb-1.5">Avatar & Cursor Color</label>
-              <div class="grid grid-cols-5 gap-1.5">
+              <div class="grid grid-cols-5 gap-1.5 mb-3">
                 @for (color of availableColors; track color) {
                   <button
                     (click)="pickColor(color)"
@@ -303,6 +307,21 @@ const AVAILABLE_COLORS = [
                     }
                   </button>
                 }
+              </div>
+
+              <div class="border-t border-canvas-border pt-2 flex justify-between items-center">
+                <a
+                  routerLink="/workspaces"
+                  class="text-[11px] text-slate-400 hover:text-white"
+                >
+                  Workspaces
+                </a>
+                <button
+                  (click)="logout()"
+                  class="text-[11px] text-rose-400 hover:text-rose-300 font-medium"
+                >
+                  Sign Out
+                </button>
               </div>
             </div>
           }
@@ -407,6 +426,8 @@ const AVAILABLE_COLORS = [
 })
 export class TopBarComponent {
   readonly bridge = inject(CanvasEngineBridgeService);
+  readonly authService = inject(AuthService);
+  readonly boardService = inject(BoardService);
   readonly availableColors = AVAILABLE_COLORS;
 
   readonly isEditingTitle = signal(false);
@@ -423,7 +444,9 @@ export class TopBarComponent {
   @ViewChild('titleInput') titleInput?: ElementRef<HTMLInputElement>;
 
   startEditTitle(): void {
-    this.titleValue.set(this.bridge.documentMeta().name);
+    if (this.boardService.currentBoardRole() === 'viewer') return;
+    const currentName = this.boardService.currentBoard()?.name || this.bridge.documentMeta().name;
+    this.titleValue.set(currentName);
     this.isEditingTitle.set(true);
     setTimeout(() => {
       this.titleInput?.nativeElement.focus();
@@ -435,6 +458,10 @@ export class TopBarComponent {
     const val = this.titleValue().trim();
     if (val) {
       this.bridge.setDocumentName(val);
+      const board = this.boardService.currentBoard();
+      if (board) {
+        this.boardService.updateBoard(board.id, { name: val }).subscribe();
+      }
     }
     this.isEditingTitle.set(false);
   }
@@ -491,6 +518,10 @@ export class TopBarComponent {
 
   pickColor(color: string): void {
     this.bridge.collaboration.setUserColor(color);
+  }
+
+  logout(): void {
+    this.authService.logout();
   }
 
   getInitials(name: string): string {

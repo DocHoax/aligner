@@ -1,4 +1,4 @@
-import { Injectable, signal, computed, OnDestroy } from '@angular/core';
+import { Injectable, signal, computed, inject, OnDestroy } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
 import {
   DocumentOperation,
@@ -16,6 +16,8 @@ import {
   createClientMessage
 } from '@alignify/protocol';
 import { CanvasObject, Point } from '@alignify/shared-types';
+import { AuthService } from './auth.service';
+import { UserRole } from '../models/auth.models';
 
 const COLOR_PALETTE = [
   '#3b82f6', // Blue
@@ -45,6 +47,8 @@ const RANDOM_NAMES = [
   providedIn: 'root'
 })
 export class CollaborationService implements OnDestroy {
+  private authService = inject(AuthService);
+
   // --- Reactive Signals ---
   readonly connectionStatus = signal<ConnectionStatus>('DISCONNECTED');
   readonly collaborators = signal<UserPresence[]>([]);
@@ -54,6 +58,8 @@ export class CollaborationService implements OnDestroy {
   readonly lastSyncedSeq = signal<number>(0);
   readonly latencyMs = signal<number>(0);
   readonly isConnected = computed(() => this.connectionStatus() === 'CONNECTED');
+  readonly userRole = signal<UserRole>('editor');
+  readonly isViewer = computed(() => this.userRole() === 'viewer');
 
   // --- Event Streams for Engine Coordination ---
   private readonly remoteOperationSubject = new Subject<{ userId: string; operation: DocumentOperation; seq: number }>();
@@ -97,6 +103,17 @@ export class CollaborationService implements OnDestroy {
   }
 
   private initLocalUser(): UserPresence {
+    const authUser = this.authService.currentUser();
+    if (authUser) {
+      return {
+        userId: authUser.id,
+        userName: authUser.displayName,
+        userColor: authUser.avatarColor || COLOR_PALETTE[0]!,
+        selectedIds: [],
+        lastActive: Date.now()
+      };
+    }
+
     if (typeof window === 'undefined') {
       return {
         userId: 'u_' + Math.random().toString(36).substring(2, 9),
@@ -158,8 +175,24 @@ export class CollaborationService implements OnDestroy {
   // Public Connection Management
   // ==========================================
 
-  connect(customWsUrl?: string): void {
+  connect(boardId?: string, customWsUrl?: string): void {
     if (typeof window === 'undefined') return;
+
+    if (boardId) {
+      this.roomId.set(boardId);
+    }
+
+    // Refresh current user from auth service if available
+    const authUser = this.authService.currentUser();
+    if (authUser) {
+      this.currentUser.set({
+        userId: authUser.id,
+        userName: authUser.displayName,
+        userColor: authUser.avatarColor || this.currentUser().userColor,
+        selectedIds: [],
+        lastActive: Date.now()
+      });
+    }
 
     this.isIntentionallyDisconnected = false;
     this.clearReconnectTimer();
@@ -201,14 +234,8 @@ export class CollaborationService implements OnDestroy {
     if (!newRoomId || newRoomId === this.roomId()) return;
 
     this.roomId.set(newRoomId);
-    if (typeof window !== 'undefined' && window.history) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('board', newRoomId);
-      window.history.replaceState({}, '', url.toString());
-    }
-
     if (this.connectionStatus() === 'CONNECTED' || this.connectionStatus() === 'CONNECTING') {
-      this.connect();
+      this.connect(newRoomId);
     }
   }
 
@@ -258,7 +285,7 @@ export class CollaborationService implements OnDestroy {
   // ==========================================
 
   sendOperation(operation: DocumentOperation): void {
-    if (!this.isConnected()) return;
+    if (!this.isConnected() || this.isViewer()) return;
 
     this.sendMessage('operation', {
       operation,
@@ -313,9 +340,7 @@ export class CollaborationService implements OnDestroy {
 
   getShareableLink(): string {
     if (typeof window === 'undefined') return '';
-    const url = new URL(window.location.href);
-    url.searchParams.set('board', this.roomId());
-    return url.toString();
+    return window.location.href;
   }
 
   // ==========================================
@@ -331,14 +356,21 @@ export class CollaborationService implements OnDestroy {
     }
 
     const user = this.currentUser();
-    const queryParams = new URLSearchParams({
+    const token = this.authService.token();
+
+    const queryParams: Record<string, string> = {
       boardId: this.roomId(),
       userId: user.userId,
       userName: user.userName,
       userColor: user.userColor
-    });
+    };
 
-    const fullUrl = `${this.wsUrl}?${queryParams.toString()}`;
+    if (token) {
+      queryParams['token'] = token;
+    }
+
+    const qs = new URLSearchParams(queryParams).toString();
+    const fullUrl = `${this.wsUrl}?${qs}`;
 
     this.connectionStatus.set(this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING');
 
