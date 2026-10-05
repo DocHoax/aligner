@@ -2,18 +2,29 @@ package rooms
 
 import (
 	"sync"
+
+	"alignify/collaboration/pkg/storage"
 )
 
 // Hub maintains the set of active rooms and handles routing to rooms.
 type Hub struct {
 	mu    sync.RWMutex
 	rooms map[string]*Room
+	store storage.Storage
 }
 
-// NewHub creates a new Hub instance.
-func NewHub() *Hub {
+// NewHub creates a new Hub instance with optional storage.
+func NewHub(store ...storage.Storage) *Hub {
+	var s storage.Storage
+	if len(store) > 0 && store[0] != nil {
+		s = store[0]
+	} else {
+		s = storage.NewMemoryStorage()
+	}
+
 	return &Hub{
 		rooms: make(map[string]*Room),
+		store: s,
 	}
 }
 
@@ -24,7 +35,7 @@ func (h *Hub) GetOrCreateRoom(boardID string) *Room {
 
 	room, exists := h.rooms[boardID]
 	if !exists {
-		room = NewRoom(boardID, h)
+		room = NewRoom(boardID, h, h.store)
 		h.rooms[boardID] = room
 		go room.Run()
 	}
@@ -59,6 +70,13 @@ func (h *Hub) RemoveRoom(boardID string) {
 func (h *Hub) NotifyEmptyRoom(boardID string) {
 	// For persistent in-memory board state across quick reconnects, we can keep the room or clean it up.
 	// We keep the room active in memory for document preservation.
+}
+
+// Storage returns the storage instance used by the hub.
+func (h *Hub) Storage() storage.Storage {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.store
 }
 
 // ActiveRoomsCount returns the number of active rooms.

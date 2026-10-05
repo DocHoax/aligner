@@ -1,14 +1,17 @@
 package rooms
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"sync"
 	"time"
 
 	"alignify/collaboration/pkg/client"
+	"alignify/collaboration/pkg/models"
 	"alignify/collaboration/pkg/presence"
 	"alignify/collaboration/pkg/protocol"
+	"alignify/collaboration/pkg/storage"
 	docSync "alignify/collaboration/pkg/sync"
 )
 
@@ -21,6 +24,7 @@ type clientMessageWrapper struct {
 type Room struct {
 	BoardID      string
 	hub          *Hub
+	store        storage.Storage
 	clients      map[*client.Client]bool
 	userToClient map[string]*client.Client
 	docStore     *docSync.DocumentStore
@@ -34,10 +38,16 @@ type Room struct {
 }
 
 // NewRoom creates an active room instance for a given board ID.
-func NewRoom(boardID string, hub *Hub) *Room {
-	return &Room{
+func NewRoom(boardID string, hub *Hub, stores ...storage.Storage) *Room {
+	var store storage.Storage
+	if len(stores) > 0 {
+		store = stores[0]
+	}
+
+	r := &Room{
 		BoardID:      boardID,
 		hub:          hub,
+		store:        store,
 		clients:      make(map[*client.Client]bool),
 		userToClient: make(map[string]*client.Client),
 		docStore:     docSync.NewDocumentStore(boardID),
@@ -48,6 +58,67 @@ func NewRoom(boardID string, hub *Hub) *Room {
 		stop:         make(chan struct{}),
 		reaperTicker: time.NewTicker(10 * time.Second),
 	}
+
+	r.hydrateFromStorage()
+	return r
+}
+
+func (r *Room) hydrateFromStorage() {
+	if r.store == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var snapshotSeq int64 = 0
+	var snapshotObjs []map[string]interface{}
+
+	snapshot, err := r.store.Snapshots().GetLatestSnapshot(ctx, r.BoardID)
+	if err == nil && snapshot != nil && len(snapshot.Data) > 0 {
+		snapshotSeq = snapshot.Seq
+		_ = json.Unmarshal(snapshot.Data, &snapshotObjs)
+	}
+
+	ops, err := r.store.Operations().GetOperationsAfterSeq(ctx, r.BoardID, snapshotSeq)
+	var remoteOps []protocol.RemoteOperationPayload
+	if err == nil && len(ops) > 0 {
+		remoteOps = make([]protocol.RemoteOperationPayload, 0, len(ops))
+		for _, opRec := range ops {
+			var docOp protocol.DocumentOperation
+			if err := json.Unmarshal(opRec.Payload, &docOp); err == nil {
+				remoteOps = append(remoteOps, protocol.RemoteOperationPayload{
+					UserID:    opRec.UserID,
+					Seq:       opRec.Seq,
+					Operation: docOp,
+				})
+			}
+		}
+	}
+
+	if err := r.docStore.Hydrate(snapshotObjs, snapshotSeq, remoteOps); err != nil {
+		log.Printf("[Room %s] Failed to hydrate document store: %v", r.BoardID, err)
+	}
+}
+
+func (r *Room) createSnapshot(seq int64, userID string) {
+	if r.store == nil {
+		return
+	}
+
+	objs, currentSeq := r.docStore.GetSnapshot()
+	dataBytes, err := json.Marshal(objs)
+	if err != nil {
+		return
+	}
+
+	_ = r.store.Snapshots().SaveSnapshot(context.Background(), &models.BoardSnapshot{
+		BoardID:   r.BoardID,
+		Seq:       currentSeq,
+		Data:      json.RawMessage(dataBytes),
+		CreatedBy: userID,
+		CreatedAt: time.Now().UTC(),
+	})
 }
 
 // HandleMessage implements client.RoomHandler.
@@ -206,6 +277,16 @@ func (r *Room) dispatchMessage(c *client.Client, msg *protocol.ClientMessage) {
 	case "operation":
 		var payload protocol.OperationPayload
 		if err := decodePayload(msg.Payload, &payload); err == nil {
+			// Enforce viewer permissions: viewers cannot mutate state
+			if !c.Role.CanWrite() {
+				errMsg := protocol.ErrorPayload{
+					Code:    "INSUFFICIENT_PERMISSIONS",
+					Message: "Viewers cannot modify the board",
+				}
+				c.SendMessage(protocol.NewServerMessage("error", r.BoardID, errMsg))
+				return
+			}
+
 			seq, err := r.docStore.ApplyOperation(c.UserID, payload.Operation)
 			if err != nil {
 				errMsg := protocol.ErrorPayload{
@@ -214,6 +295,25 @@ func (r *Room) dispatchMessage(c *client.Client, msg *protocol.ClientMessage) {
 				}
 				c.SendMessage(protocol.NewServerMessage("error", r.BoardID, errMsg))
 				return
+			}
+
+			// Persist operation to storage
+			if r.store != nil {
+				opPayloadBytes, _ := json.Marshal(payload.Operation)
+				opRecord := &models.OperationRecord{
+					BoardID:   r.BoardID,
+					Seq:       seq,
+					UserID:    c.UserID,
+					OpType:    payload.Operation.Op,
+					Payload:   json.RawMessage(opPayloadBytes),
+					CreatedAt: time.Now().UTC(),
+				}
+				_ = r.store.Operations().AppendOperation(context.Background(), opRecord)
+
+				// Compaction: save snapshot every 50 operations
+				if seq > 0 && seq%50 == 0 {
+					r.createSnapshot(seq, c.UserID)
+				}
 			}
 
 			// 1. Send Ack to author
