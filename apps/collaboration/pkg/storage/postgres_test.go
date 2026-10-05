@@ -3,6 +3,7 @@ package storage_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,8 +51,8 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 
 	// 1. Create Users
 	user1 := &models.User{
-		ID:           models.GenerateID("usr"),
-		Email:        models.FormatSlug(time.Now().Format("20060102150405")) + "-owner@alignify.dev",
+		ID:           fmt.Sprintf("usr_test_owner_%d", ts),
+		Email:        fmt.Sprintf("owner_%d@alignify.dev", ts),
 		PasswordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz123456",
 		DisplayName:  "Alice System Owner",
 		AvatarColor:  "#3b82f6",
@@ -61,8 +62,8 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 	}
 
 	user2 := &models.User{
-		ID:           models.GenerateID("usr"),
-		Email:        models.FormatSlug(time.Now().Format("20060102150405")) + "-editor@alignify.dev",
+		ID:           fmt.Sprintf("usr_test_editor_%d", ts),
+		Email:        fmt.Sprintf("editor_%d@alignify.dev", ts),
 		PasswordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz123456",
 		DisplayName:  "Bob System Editor",
 		AvatarColor:  "#10b981",
@@ -73,7 +74,7 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 
 	// Verify duplicate email constraint
 	dupUser := &models.User{
-		ID:    models.GenerateID("usr"),
+		ID:    fmt.Sprintf("usr_test_dup_%d", ts),
 		Email: user1.Email,
 	}
 	if err := store.Users().CreateUser(ctx, dupUser); err != storage.ErrAlreadyExists {
@@ -82,9 +83,9 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 
 	// 2. Create Workspace
 	ws := &models.Workspace{
-		ID:          models.GenerateID("ws"),
+		ID:          fmt.Sprintf("ws_test_%d", ts),
 		Name:        "Engineering Live Test",
-		Slug:        "eng-live-test",
+		Slug:        fmt.Sprintf("eng-live-test-%d", ts),
 		Description: "Workspace for PostgreSQL integration tests",
 		OwnerID:     user1.ID,
 	}
@@ -94,7 +95,7 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 
 	// Add Owner Membership
 	mem1 := &models.WorkspaceMembership{
-		ID:          models.GenerateID("mem"),
+		ID:          fmt.Sprintf("mem_owner_%d", ts),
 		WorkspaceID: ws.ID,
 		UserID:      user1.ID,
 		Role:        models.RoleOwner,
@@ -105,7 +106,7 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 
 	// Add Editor Membership
 	mem2 := &models.WorkspaceMembership{
-		ID:          models.GenerateID("mem"),
+		ID:          fmt.Sprintf("mem_editor_%d", ts),
 		WorkspaceID: ws.ID,
 		UserID:      user2.ID,
 		Role:        models.RoleEditor,
@@ -125,7 +126,7 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 
 	// 3. Create Board
 	board := &models.Board{
-		ID:          models.GenerateID("brd"),
+		ID:          fmt.Sprintf("brd_test_%d", ts),
 		WorkspaceID: ws.ID,
 		Name:        "Architecture Roadmap",
 		Description: "Main product architecture canvas",
@@ -222,6 +223,4 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 	if len(tailOps) != 1 || tailOps[0].Seq != 3 {
 		t.Fatalf("Postgres: expected 1 tail operation with seq 3, got %d", len(tailOps))
 	}
-
-	_ = ts
 }
