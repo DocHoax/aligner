@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,9 @@ type Server struct {
 	authHandler   *handlers.AuthHandler
 	workspaceHdlr *handlers.WorkspaceHandler
 	boardHdlr     *handlers.BoardHandler
+	commentHdlr   *handlers.CommentHandler
+	activityHdlr  *handlers.ActivityHandler
+	versionHdlr   *handlers.VersionHandler
 	authMw        *auth.AuthMiddleware
 	startTime     time.Time
 }
@@ -66,6 +70,9 @@ func NewServer(hub *rooms.Hub, stores ...storage.Storage) *Server {
 		authHandler:   handlers.NewAuthHandler(store, jwtManager),
 		workspaceHdlr: handlers.NewWorkspaceHandler(store),
 		boardHdlr:     handlers.NewBoardHandler(store),
+		commentHdlr:   handlers.NewCommentHandler(store),
+		activityHdlr:  handlers.NewActivityHandler(store),
+		versionHdlr:   handlers.NewVersionHandler(store, hub),
 		authMw:        authMw,
 		startTime:     time.Now(),
 	}
@@ -202,7 +209,7 @@ func (s *Server) handleWorkspacesRouter(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleBoardsRouter(w http.ResponseWriter, r *http.Request) {
-	// Path format: /api/boards/{boardId}[/export]
+	// Path format: /api/boards/{boardId}[/export | /favorite | /thumbnail | /comments[/{commentId}] | /activity | /versions[/{versionId}[/restore]]]
 	subPath := strings.TrimPrefix(r.URL.Path, "/api/boards/")
 	if subPath == "" {
 		handlers.WriteError(w, http.StatusNotFound, "Board ID is required")
@@ -240,6 +247,123 @@ func (s *Server) handleBoardsRouter(w http.ResponseWriter, r *http.Request) {
 			s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				s.boardHdlr.ExportBoard(w, r, boardID)
 			})).ServeHTTP(w, r)
+		} else {
+			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+		return
+	}
+
+	// 3. /api/boards/:boardId/favorite
+	if len(parts) == 2 && parts[1] == "favorite" {
+		if r.Method == http.MethodPost {
+			s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				s.boardHdlr.ToggleFavorite(w, r, boardID)
+			})(w, r)
+		} else {
+			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+		return
+	}
+
+	// 4. /api/boards/:boardId/thumbnail
+	if len(parts) == 2 && parts[1] == "thumbnail" {
+		if r.Method == http.MethodPatch || r.Method == http.MethodPut {
+			s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				s.boardHdlr.UpdateThumbnail(w, r, boardID)
+			})(w, r)
+		} else {
+			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+		return
+	}
+
+	// 5. /api/boards/:boardId/comments
+	if len(parts) == 2 && parts[1] == "comments" {
+		switch r.Method {
+		case http.MethodGet:
+			s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s.commentHdlr.GetComments(w, r, boardID)
+			})).ServeHTTP(w, r)
+		case http.MethodPost:
+			s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				s.commentHdlr.CreateComment(w, r, boardID)
+			})(w, r)
+		default:
+			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+		return
+	}
+
+	// 6. /api/boards/:boardId/comments/:commentId
+	if len(parts) == 3 && parts[1] == "comments" {
+		commentID := parts[2]
+		switch r.Method {
+		case http.MethodPatch, http.MethodPut:
+			s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				s.commentHdlr.UpdateComment(w, r, boardID, commentID)
+			})(w, r)
+		case http.MethodDelete:
+			s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				s.commentHdlr.DeleteComment(w, r, boardID, commentID)
+			})(w, r)
+		default:
+			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+		return
+	}
+
+	// 7. /api/boards/:boardId/activity
+	if len(parts) == 2 && parts[1] == "activity" {
+		if r.Method == http.MethodGet {
+			s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s.activityHdlr.GetActivities(w, r, boardID)
+			})).ServeHTTP(w, r)
+		} else {
+			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+		return
+	}
+
+	// 8. /api/boards/:boardId/versions
+	if len(parts) == 2 && parts[1] == "versions" {
+		if r.Method == http.MethodGet {
+			s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s.versionHdlr.ListVersions(w, r, boardID)
+			})).ServeHTTP(w, r)
+		} else {
+			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+		return
+	}
+
+	// 9. /api/boards/:boardId/versions/:versionId
+	if len(parts) == 3 && parts[1] == "versions" {
+		vID, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil {
+			handlers.WriteError(w, http.StatusBadRequest, "Invalid version ID")
+			return
+		}
+		if r.Method == http.MethodGet {
+			s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s.versionHdlr.GetVersion(w, r, boardID, vID)
+			})).ServeHTTP(w, r)
+		} else {
+			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+		return
+	}
+
+	// 10. /api/boards/:boardId/versions/:versionId/restore
+	if len(parts) == 4 && parts[1] == "versions" && parts[3] == "restore" {
+		vID, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil {
+			handlers.WriteError(w, http.StatusBadRequest, "Invalid version ID")
+			return
+		}
+		if r.Method == http.MethodPost {
+			s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				s.versionHdlr.RestoreVersion(w, r, boardID, vID)
+			})(w, r)
 		} else {
 			handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		}

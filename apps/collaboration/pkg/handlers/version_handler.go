@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"alignify/collaboration/pkg/auth"
@@ -92,7 +91,7 @@ func (h *VersionHandler) RestoreVersion(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	board, err := h.store.Boards().GetBoardByID(r.Context(), boardID)
+	_, err := h.store.Boards().GetBoardByID(r.Context(), boardID)
 	if err != nil {
 		WriteError(w, http.StatusNotFound, "Board not found")
 		return

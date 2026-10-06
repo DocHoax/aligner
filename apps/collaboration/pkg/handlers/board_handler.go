@@ -32,7 +32,11 @@ type UpdateBoardRequest struct {
 	IsPublic    *bool  `json:"isPublic,omitempty"`
 }
 
-// ListWorkspaceBoards returns all boards in a workspace
+type UpdateThumbnailRequest struct {
+	ThumbnailURL string `json:"thumbnailUrl"`
+}
+
+// ListWorkspaceBoards returns all boards in a workspace with search, filtering, and role metadata
 func (h *BoardHandler) ListWorkspaceBoards(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -52,14 +56,19 @@ func (h *BoardHandler) ListWorkspaceBoards(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	boards, err := h.store.Boards().GetBoardsByWorkspaceID(r.Context(), workspaceID)
+	query := r.URL.Query().Get("q")
+	sortBy := r.URL.Query().Get("sort")
+	favStr := r.URL.Query().Get("favorites")
+	favoritesOnly := favStr == "true" || favStr == "1"
+
+	boards, err := h.store.Boards().GetBoardsByWorkspaceIDFiltered(r.Context(), workspaceID, userID, query, sortBy, favoritesOnly)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "Failed to retrieve boards: "+err.Error())
 		return
 	}
 
 	if boards == nil {
-		boards = []models.Board{}
+		boards = []models.BoardWithRole{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -268,3 +277,76 @@ func (h *BoardHandler) ExportBoard(w http.ResponseWriter, r *http.Request, board
 		"snapshotSeq": func() int64 { if snapshot != nil { return snapshot.Seq }; return 0 }(),
 	})
 }
+
+// ToggleFavorite stars/unstars a board for the authenticated user
+func (h *BoardHandler) ToggleFavorite(w http.ResponseWriter, r *http.Request, boardID string) {
+	if r.Method != http.MethodPost {
+		WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	_, err := h.store.Boards().GetBoardByID(r.Context(), boardID)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, "Board not found")
+		return
+	}
+
+	isFav, _ := h.store.Favorites().IsFavorite(r.Context(), userID, boardID)
+	var newFav bool
+	if isFav {
+		_ = h.store.Favorites().RemoveFavorite(r.Context(), userID, boardID)
+		newFav = false
+	} else {
+		_ = h.store.Favorites().AddFavorite(r.Context(), userID, boardID)
+		newFav = true
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success":    true,
+		"boardId":    boardID,
+		"isFavorite": newFav,
+	})
+}
+
+// UpdateThumbnail updates the thumbnail URL/data for a board
+func (h *BoardHandler) UpdateThumbnail(w http.ResponseWriter, r *http.Request, boardID string) {
+	if r.Method != http.MethodPatch && r.Method != http.MethodPut {
+		WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	role, err := h.store.Boards().GetBoardEffectiveRole(r.Context(), boardID, userID)
+	if err != nil || !role.CanWrite() {
+		WriteError(w, http.StatusForbidden, "Only editors and owners can update board thumbnails")
+		return
+	}
+
+	var req UpdateThumbnailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	if err := h.store.Boards().UpdateBoardThumbnail(r.Context(), boardID, req.ThumbnailURL); err != nil {
+		WriteError(w, http.StatusInternalServerError, "Failed to update thumbnail: "+err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Thumbnail updated successfully",
+	})
+}
+
