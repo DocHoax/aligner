@@ -41,6 +41,7 @@ type Server struct {
 	commentHdlr   *handlers.CommentHandler
 	activityHdlr  *handlers.ActivityHandler
 	versionHdlr   *handlers.VersionHandler
+	aiHdlr        *handlers.AIHandler
 	authMw        *auth.AuthMiddleware
 	startTime     time.Time
 }
@@ -76,6 +77,7 @@ func NewServer(hub *rooms.Hub, stores ...storage.Storage) *Server {
 		commentHdlr:   handlers.NewCommentHandler(store),
 		activityHdlr:  handlers.NewActivityHandler(store),
 		versionHdlr:   handlers.NewVersionHandler(store, hub),
+		aiHdlr:        handlers.NewAIHandler(store, hub, nil),
 		authMw:        authMw,
 		startTime:     time.Now(),
 	}
