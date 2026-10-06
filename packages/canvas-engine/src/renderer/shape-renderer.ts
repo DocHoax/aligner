@@ -330,4 +330,49 @@ export class ShapeRenderer {
 
     ctx.restore();
   }
+
+  private static renderFrame(ctx: CanvasRenderingContext2D, obj: FrameObject): void {
+    const { x, y, width, height, rotation, cornerRadius, fillColor, strokeColor, strokeWidth, strokeStyle, name } = obj;
+
+    ctx.save();
+    if (rotation !== 0) {
+      const cx = x + width / 2;
+      const cy = y + height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
+
+    // 1. Frame Title Badge above top-left
+    if (name) {
+      ctx.font = '600 12px "Inter", -apple-system, sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.textBaseline = 'bottom';
+      ctx.textAlign = 'left';
+      ctx.fillText(name, x, y - 6);
+    }
+
+    // 2. Frame Body Box
+    ctx.beginPath();
+    const r = Math.min(cornerRadius, Math.min(width, height) / 2);
+    if (r > 0) {
+      ctx.roundRect(x, y, width, height, r);
+    } else {
+      ctx.rect(x, y, width, height);
+    }
+
+    if (fillColor && fillColor !== 'transparent') {
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+    }
+
+    if (strokeWidth > 0 && strokeColor && strokeColor !== 'transparent') {
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = strokeWidth;
+      this.applyStrokeStyle(ctx, strokeStyle, strokeWidth);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
 }
