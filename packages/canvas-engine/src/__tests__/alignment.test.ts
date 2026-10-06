@@ -64,6 +64,6 @@ describe('AlignmentEngine', () => {
     const l1Change = changes.find((c) => c.id === 'l1');
     expect(l1Change).toBeDefined();
     // Total maxX is 300. Line max X is ~111 with stroke expansion.
-    expect(l1Change?.changes.x2).toBeGreaterThan(110);
+    expect((l1Change?.changes as Record<string, any>)?.['x2']).toBeGreaterThan(110);
   });
 });
