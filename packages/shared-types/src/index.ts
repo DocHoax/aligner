@@ -163,13 +163,32 @@ export interface ArrowObject extends BaseCanvasObject {
   curved?: boolean;
 }
 
+export interface FrameObject extends BaseCanvasObject {
+  readonly type: 'frame';
+  name: string;
+  fillColor: string;
+  strokeColor: string;
+  strokeWidth: number;
+  strokeStyle: StrokeStyle;
+  cornerRadius: number;
+  clipContent?: boolean;
+}
+
+export interface GroupObject extends BaseCanvasObject {
+  readonly type: 'group';
+  name?: string;
+  childIds: string[];
+}
+
 export type CanvasObject =
   | RectangleObject
   | EllipseObject
   | TextObject
   | StickyNoteObject
   | LineObject
-  | ArrowObject;
+  | ArrowObject
+  | FrameObject
+  | GroupObject;
 
 // ==========================================
 // 4. Tools, Handles & Interactions
@@ -183,7 +202,8 @@ export type ToolType =
   | 'line'
   | 'arrow'
   | 'text'
-  | 'sticky';
+  | 'sticky'
+  | 'frame';
 
 export type HandleType =
   | 'nw'
