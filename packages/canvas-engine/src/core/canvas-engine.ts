@@ -365,22 +365,6 @@ export class CanvasEngine {
     this.lockSelected(!allLocked);
   }
 
-  getStore(): ObjectStore {
-    return this.store;
-  }
-
-  getCamera(): Camera {
-    return this.camera;
-  }
-
-  getSelection(): SelectionManager {
-    return this.selection;
-  }
-
-  getHistory(): CommandStack {
-    return this.history;
-  }
-
   // --- Camera Operations ---
   setZoom(zoom: number): void {
     if (!this.canvas) return;
