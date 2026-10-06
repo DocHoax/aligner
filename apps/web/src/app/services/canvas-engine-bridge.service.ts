@@ -26,6 +26,7 @@ export class CanvasEngineBridgeService implements OnDestroy {
   readonly tool = signal<ToolType>('select');
   readonly zoom = signal<number>(100);
   readonly selectedObjects = signal<CanvasObject[]>([]);
+  readonly allObjects = signal<CanvasObject[]>([]);
   readonly selectedCount = computed(() => this.selectedObjects().length);
   readonly singleSelectedObject = computed(() => {
     const list = this.selectedObjects();
@@ -80,6 +81,10 @@ export class CanvasEngineBridgeService implements OnDestroy {
     });
 
     const eventBus = this.engine.getEventBus();
+
+    eventBus.on('store_changed', (all) => {
+      this.allObjects.set([...(all as CanvasObject[])]);
+    });
 
     eventBus.on('tool_changed', (tool) => {
       this.tool.set(tool as ToolType);
@@ -244,6 +249,49 @@ export class CanvasEngineBridgeService implements OnDestroy {
 
   reorderSelected(action: 'bringToFront' | 'sendToBack' | 'bringForward' | 'sendBackward'): void {
     this.engine?.reorderSelected(action);
+  }
+
+  alignSelected(alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'): void {
+    this.engine?.alignSelected(alignment);
+  }
+
+  distributeSelected(type: 'horizontal' | 'vertical'): void {
+    this.engine?.distributeSelected(type);
+  }
+
+  lockSelected(locked = true): void {
+    this.engine?.lockSelected(locked);
+  }
+
+  toggleSelectedLock(): void {
+    this.engine?.toggleSelectedLock();
+  }
+
+  selectObject(id: string, additive = false): void {
+    if (!this.engine) return;
+    const obj = this.engine.getStore().get(id);
+    if (!obj) return;
+    if (additive) {
+      this.engine.getSelection().toggle(obj);
+    } else {
+      this.engine.getSelection().setSingle(obj);
+    }
+  }
+
+  async generateThumbnail(): Promise<string> {
+    if (!this.engine) return '';
+    try {
+      const objects = this.engine.getStore().getAll();
+      if (objects.length === 0) return '';
+      return await this.engine.getExport().exportPNG({
+        pixelRatio: 1,
+        padding: 16,
+        includeBackground: true,
+        backgroundColor: '#0f172a'
+      });
+    } catch {
+      return '';
+    }
   }
 
   newDocument(name?: string): void {
