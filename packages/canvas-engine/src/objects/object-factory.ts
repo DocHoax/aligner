@@ -8,6 +8,8 @@ import {
   CanvasObjectType,
   DEFAULT_OBJECT_COLORS,
   EllipseObject,
+  FrameObject,
+  GroupObject,
   LineObject,
   RectangleObject,
   StickyColor,
@@ -172,6 +174,53 @@ export class ObjectFactory {
     };
   }
 
+  static createFrame(props: Partial<FrameObject> = {}): FrameObject {
+    const now = Date.now();
+    return {
+      id: props.id ?? this.generateId(),
+      type: 'frame',
+      name: props.name ?? 'Frame',
+      x: props.x ?? 0,
+      y: props.y ?? 0,
+      width: props.width ?? 400,
+      height: props.height ?? 300,
+      rotation: props.rotation ?? 0,
+      zIndex: props.zIndex ?? 0,
+      locked: props.locked ?? false,
+      opacity: props.opacity ?? 1,
+      fillColor: props.fillColor ?? '#ffffff',
+      strokeColor: props.strokeColor ?? '#94a3b8',
+      strokeWidth: props.strokeWidth ?? 1,
+      strokeStyle: props.strokeStyle ?? 'solid',
+      cornerRadius: props.cornerRadius ?? 0,
+      clipContent: props.clipContent ?? false,
+      createdAt: props.createdAt ?? now,
+      updatedAt: props.updatedAt ?? now,
+      metadata: props.metadata
+    };
+  }
+
+  static createGroup(props: Partial<GroupObject> = {}): GroupObject {
+    const now = Date.now();
+    return {
+      id: props.id ?? this.generateId(),
+      type: 'group',
+      name: props.name ?? 'Group',
+      x: props.x ?? 0,
+      y: props.y ?? 0,
+      width: props.width ?? 100,
+      height: props.height ?? 100,
+      rotation: props.rotation ?? 0,
+      zIndex: props.zIndex ?? 0,
+      locked: props.locked ?? false,
+      opacity: props.opacity ?? 1,
+      childIds: props.childIds ?? [],
+      createdAt: props.createdAt ?? now,
+      updatedAt: props.updatedAt ?? now,
+      metadata: props.metadata
+    };
+  }
+
   static create(type: CanvasObjectType, props: Partial<CanvasObject> = {}): CanvasObject {
     switch (type) {
       case 'rectangle':
@@ -186,6 +235,10 @@ export class ObjectFactory {
         return this.createLine(props as Partial<LineObject>);
       case 'arrow':
         return this.createArrow(props as Partial<ArrowObject>);
+      case 'frame':
+        return this.createFrame(props as Partial<FrameObject>);
+      case 'group':
+        return this.createGroup(props as Partial<GroupObject>);
       default:
         return this.createRectangle(props as Partial<RectangleObject>);
     }
