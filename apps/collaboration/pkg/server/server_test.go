@@ -95,3 +95,75 @@ func TestServer_WebSocketRejectsInvalidToken(t *testing.T) {
 		t.Fatalf("expected 401 for invalid WebSocket token, got response %#v", response)
 	}
 }
+
+func TestServer_WebSocketTicketFlow(t *testing.T) {
+	hub := rooms.NewHub()
+	srv := NewServer(hub)
+	testServer := httptest.NewServer(srv.Routes())
+	defer testServer.Close()
+
+	// 1. Register a user
+	regBody := `{"email":"ticketuser@alignify.dev","password":"Password123!","displayName":"TicketUser"}`
+	resp, err := http.Post(testServer.URL+"/api/auth/register", "application/json", strings.NewReader(regBody))
+	if err != nil {
+		t.Fatalf("failed to register: %v", err)
+	}
+	var authData struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&authData)
+	resp.Body.Close()
+	if authData.Token == "" {
+		t.Fatalf("expected token from register")
+	}
+
+	// 2. Request single-use WS ticket
+	ticketReq, _ := http.NewRequest(http.MethodPost, testServer.URL+"/api/auth/ws-ticket", strings.NewReader(`{"boardId":"test-ticket-board"}`))
+	ticketReq.Header.Set("Authorization", "Bearer "+authData.Token)
+	ticketReq.Header.Set("Content-Type", "application/json")
+	ticketResp, err := http.DefaultClient.Do(ticketReq)
+	if err != nil {
+		t.Fatalf("failed to request ws ticket: %v", err)
+	}
+	defer ticketResp.Body.Close()
+	if ticketResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from ws-ticket, got %d", ticketResp.StatusCode)
+	}
+	var ticketData struct {
+		Ticket string `json:"ticket"`
+	}
+	_ = json.NewDecoder(ticketResp.Body).Decode(&ticketData)
+	if ticketData.Ticket == "" {
+		t.Fatalf("expected non-empty ticket ID")
+	}
+
+	// 3. Connect to WebSocket using ticket
+	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/ws?ticket=" + ticketData.Ticket
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to connect via WS ticket: %v", err)
+	}
+	defer ws.Close()
+
+	// Verify 'joined' message received
+	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, msgBytes, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read joined message: %v", err)
+	}
+	var srvMsg protocol.ServerMessage
+	_ = json.Unmarshal(msgBytes, &srvMsg)
+	if srvMsg.Type != "joined" {
+		t.Fatalf("expected joined message, got %s", srvMsg.Type)
+	}
+
+	// 4. Second connection with same ticket MUST be rejected (single-use)
+	_, replayResp, replayErr := websocket.DefaultDialer.Dial(wsURL, nil)
+	if replayErr == nil {
+		t.Fatal("expected replay of consumed ticket to be rejected")
+	}
+	if replayResp != nil && replayResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on ticket replay, got %d", replayResp.StatusCode)
+	}
+}
+

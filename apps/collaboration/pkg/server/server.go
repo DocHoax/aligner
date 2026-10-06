@@ -95,6 +95,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/auth/logout", s.authHandler.Logout)
 	mux.HandleFunc("/api/auth/me", s.authMw.RequireAuth(s.authHandler.GetMe))
 	mux.HandleFunc("/api/auth/profile", s.authMw.RequireAuth(s.authHandler.UpdateProfile))
+	mux.HandleFunc("/api/auth/ws-ticket", s.authMw.RequireAuth(s.handleCreateWSTicket))
 
 	// 3. Workspaces & Members Router
 	mux.HandleFunc("/api/workspaces", s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
@@ -394,6 +395,42 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(stats)
 }
 
+func (s *Server) handleCreateWSTicket(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		handlers.WriteError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req struct {
+		BoardID string `json:"boardId"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.BoardID == "" {
+		req.BoardID = "default"
+	}
+
+	user, err := s.store.Users().GetUserByID(r.Context(), userID)
+	email := ""
+	displayName := ""
+	if err == nil && user != nil {
+		email = user.Email
+		displayName = user.DisplayName
+	}
+
+	ticket := s.ticketStore.CreateTicket(userID, email, displayName, req.BoardID)
+	handlers.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"ticket":    ticket.ID,
+		"expiresAt": ticket.ExpiresAt,
+	})
+}
+
 func (s *Server) handleRoomsStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -417,11 +454,33 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		boardID = "default"
 	}
 
+	ticketID := query.Get("ticket")
 	tokenStr := auth.ExtractToken(r)
 	var userID, userName, userColor string
 	role := models.RoleEditor // Default role for local dev / unmanaged boards
 
-	if tokenStr != "" {
+	if ticketID != "" && s.ticketStore != nil {
+		if ticket, ok := s.ticketStore.ConsumeTicket(ticketID); ok && ticket != nil {
+			userID = ticket.UserID
+			userName = ticket.DisplayName
+			if ticket.BoardID != "" && (boardID == "default" || boardID == "") {
+				boardID = ticket.BoardID
+			}
+
+			// Check user profile for avatar color
+			if user, err := s.store.Users().GetUserByID(r.Context(), userID); err == nil && user != nil {
+				if user.AvatarColor != "" {
+					userColor = user.AvatarColor
+				}
+				if userName == "" {
+					userName = user.DisplayName
+				}
+			}
+		} else {
+			http.Error(w, "Unauthorized: invalid or expired WebSocket ticket", http.StatusUnauthorized)
+			return
+		}
+	} else if tokenStr != "" {
 		claims, err := s.jwtManager.ValidateToken(tokenStr)
 		if err != nil || claims == nil {
 			http.Error(w, "Unauthorized: invalid WebSocket token", http.StatusUnauthorized)
