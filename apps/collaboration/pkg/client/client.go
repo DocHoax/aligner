@@ -66,6 +66,20 @@ func NewClient(userID, userName, userColor string, role models.Role, boardID str
 	}
 }
 
+// SetRole thread-safely updates the client's permission role.
+func (c *Client) SetRole(role models.Role) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Role = role
+}
+
+// GetRole thread-safely returns the client's current permission role.
+func (c *Client) GetRole() models.Role {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Role
+}
+
 // SendMessage serializes and enqueues a ServerMessage for this client.
 func (c *Client) SendMessage(msg *protocol.ServerMessage) {
 	data, err := json.Marshal(msg)
