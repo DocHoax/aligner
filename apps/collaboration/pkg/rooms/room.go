@@ -278,7 +278,7 @@ func (r *Room) dispatchMessage(c *client.Client, msg *protocol.ClientMessage) {
 		var payload protocol.OperationPayload
 		if err := decodePayload(msg.Payload, &payload); err == nil {
 			// Enforce viewer permissions: viewers cannot mutate state
-			if !c.Role.CanWrite() {
+			if !c.GetRole().CanWrite() {
 				errMsg := protocol.ErrorPayload{
 					Code:    "INSUFFICIENT_PERMISSIONS",
 					Message: "Viewers cannot modify the board",
@@ -412,6 +412,46 @@ func (r *Room) RestoreFromSnapshot(objects []map[string]interface{}, seq int64, 
 		Seq:     seq,
 	}
 	r.Broadcast(protocol.NewServerMessage("snapshot", r.BoardID, snapshotMsg))
+}
+
+// UpdateUserRole updates the role for a connected user and notifies them.
+func (r *Room) UpdateUserRole(userID string, newRole models.Role) {
+	r.mu.RLock()
+	cl, exists := r.userToClient[userID]
+	r.mu.RUnlock()
+
+	if exists && cl != nil {
+		cl.SetRole(newRole)
+		log.Printf("[Room %s] User %s role dynamically updated to %s", r.BoardID, userID, newRole)
+		if !newRole.CanWrite() {
+			errMsg := protocol.ErrorPayload{
+				Code:    "ROLE_CHANGED",
+				Message: "Your workspace role has been changed to viewer",
+			}
+			cl.SendMessage(protocol.NewServerMessage("error", r.BoardID, errMsg))
+		}
+	}
+}
+
+// DisconnectUser kicks a user from the room with a reason.
+func (r *Room) DisconnectUser(userID string, reason string) {
+	r.mu.RLock()
+	cl, exists := r.userToClient[userID]
+	r.mu.RUnlock()
+
+	if exists && cl != nil {
+		log.Printf("[Room %s] Disconnecting user %s (reason: %s)", r.BoardID, userID, reason)
+		errMsg := protocol.ErrorPayload{
+			Code:    "SESSION_REVOKED",
+			Message: reason,
+		}
+		cl.SendMessage(protocol.NewServerMessage("error", r.BoardID, errMsg))
+		go func(c *client.Client) {
+			time.Sleep(100 * time.Millisecond)
+			r.Unregister(c)
+			c.Close()
+		}(cl)
+	}
 }
 
 // ClientCount returns the number of active clients in this room.
