@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 
-	"alignify/collaboration/pkg/protocol"
 	"alignify/collaboration/pkg/utils"
 )
 
