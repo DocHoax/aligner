@@ -16,11 +16,20 @@ export class BoardService {
   readonly currentBoardRole = signal<UserRole>('viewer');
   readonly loading = signal<boolean>(false);
 
-  loadBoards(workspaceId: string): Observable<Board[]> {
+  loadBoards(
+    workspaceId: string,
+    filter?: { q?: string; favorites?: boolean; sort?: string }
+  ): Observable<Board[]> {
     this.loading.set(true);
+    let params: any = {};
+    if (filter?.q) params.q = filter.q;
+    if (filter?.favorites) params.favorites = 'true';
+    if (filter?.sort) params.sort = filter.sort;
+
     return this.http
       .get<Board[]>(`/api/workspaces/${workspaceId}/boards`, {
-        headers: this.authService.getAuthHeaders()
+        headers: this.authService.getAuthHeaders(),
+        params
       })
       .pipe(
         map((response: Board[] | { boards?: Board[] }) =>
@@ -34,6 +43,33 @@ export class BoardService {
           error: () => this.loading.set(false)
         })
       );
+  }
+
+  toggleFavorite(boardId: string): Observable<{ isFavorite: boolean }> {
+    return this.http
+      .post<{ isFavorite: boolean; success: boolean }>(
+        `/api/boards/${boardId}/favorite`,
+        {},
+        { headers: this.authService.getAuthHeaders() }
+      )
+      .pipe(
+        tap((res) => {
+          this.boards.update((list) =>
+            list.map((b) => (b.id === boardId ? { ...b, isFavorite: res.isFavorite } : b))
+          );
+          if (this.currentBoard()?.id === boardId) {
+            this.currentBoard.update((b) => (b ? { ...b, isFavorite: res.isFavorite } : null));
+          }
+        })
+      );
+  }
+
+  updateThumbnail(boardId: string, thumbnailDataUrl: string): Observable<any> {
+    return this.http.patch(
+      `/api/boards/${boardId}/thumbnail`,
+      { thumbnail: thumbnailDataUrl },
+      { headers: this.authService.getAuthHeaders() }
+    );
   }
 
   createBoard(

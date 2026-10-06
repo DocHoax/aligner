@@ -24,6 +24,8 @@ import { SelectionManager } from '../selection/selection-manager';
 import { IndexedDBStorage } from '../storage/indexeddb-storage';
 import { DocumentSerializer } from '../storage/document-serializer';
 import { ToolManager } from '../tools/tool-manager';
+import { AlignmentEngine, AlignmentType } from '../math/alignment';
+import { DistributionEngine, DistributionType } from '../math/distribution';
 import { KeyEventInfo, PointerEventInfo } from '../tools/tool';
 import { EventBus } from './event-bus';
 import { RenderLoop } from './render-loop';
@@ -298,6 +300,85 @@ export class CanvasEngine {
     const cmd = ReorderObjectsCommand.create(this.store, ids, action);
     this.history.record(cmd);
     this.renderLoop.requestRender();
+  }
+
+  alignSelected(alignment: AlignmentType): void {
+    const selected = this.selection.getSelectedObjects();
+    if (selected.length < 2) return;
+
+    const changes = AlignmentEngine.align(selected, alignment);
+    if (changes.length === 0) return;
+
+    const updates = changes.map((c) => {
+      const obj = this.store.get(c.id);
+      const before: Partial<CanvasObject> = {};
+      const after: Partial<CanvasObject> = { ...c.changes };
+
+      for (const key of Object.keys(c.changes) as Array<keyof CanvasObject>) {
+        if (obj) {
+          (before as Record<string, unknown>)[key] = obj[key];
+        }
+      }
+
+      return { id: c.id, before, after };
+    });
+
+    const cmd = new UpdatePropertiesCommand(this.store, `Align ${alignment}`, updates);
+    this.history.execute(cmd);
+    this.renderLoop.requestRender();
+  }
+
+  distributeSelected(type: DistributionType): void {
+    const selected = this.selection.getSelectedObjects();
+    if (selected.length < 3) return;
+
+    const changes = DistributionEngine.distribute(selected, type);
+    if (changes.length === 0) return;
+
+    const updates = changes.map((c) => {
+      const obj = this.store.get(c.id);
+      const before: Partial<CanvasObject> = {};
+      const after: Partial<CanvasObject> = { ...c.changes };
+
+      for (const key of Object.keys(c.changes) as Array<keyof CanvasObject>) {
+        if (obj) {
+          (before as Record<string, unknown>)[key] = obj[key];
+        }
+      }
+
+      return { id: c.id, before, after };
+    });
+
+    const cmd = new UpdatePropertiesCommand(this.store, `Distribute ${type}`, updates);
+    this.history.execute(cmd);
+    this.renderLoop.requestRender();
+  }
+
+  lockSelected(locked = true): void {
+    this.updateSelectedProperties({ locked });
+  }
+
+  toggleSelectedLock(): void {
+    const selected = this.selection.getSelectedObjects();
+    if (selected.length === 0) return;
+    const allLocked = selected.every((o) => o.locked);
+    this.lockSelected(!allLocked);
+  }
+
+  getStore(): ObjectStore {
+    return this.store;
+  }
+
+  getCamera(): Camera {
+    return this.camera;
+  }
+
+  getSelection(): SelectionManager {
+    return this.selection;
+  }
+
+  getHistory(): CommandStack {
+    return this.history;
   }
 
   // --- Camera Operations ---

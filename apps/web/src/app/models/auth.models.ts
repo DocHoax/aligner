@@ -37,10 +37,53 @@ export interface Board {
   description: string;
   createdBy?: string;
   isPublic: boolean;
+  isFavorite?: boolean;
+  thumbnailUrl?: string;
   userRole?: UserRole;
   workspaceName?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BoardComment {
+  id: string;
+  boardId: string;
+  parentId?: string;
+  authorId: string;
+  authorName: string;
+  authorEmail: string;
+  authorAvatarColor: string;
+  content: string;
+  x?: number;
+  y?: number;
+  resolved: boolean;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  replies?: BoardComment[];
+}
+
+export interface BoardActivity {
+  id: number;
+  boardId: string;
+  userId: string;
+  userName: string;
+  userAvatarColor: string;
+  actionType: string;
+  description: string;
+  metadata: Record<string, any>;
+  createdAt: string;
+}
+
+export interface BoardSnapshot {
+  id: string;
+  boardId: string;
+  seq: number;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt: string;
+  data?: any;
 }
 
 export interface AuthResponse {
