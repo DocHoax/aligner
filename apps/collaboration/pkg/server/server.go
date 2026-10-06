@@ -296,23 +296,30 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	if tokenStr != "" {
 		claims, err := s.jwtManager.ValidateToken(tokenStr)
-		if err == nil && claims != nil {
-			userID = claims.UserID
-			userName = claims.DisplayName
+		if err != nil || claims == nil {
+			http.Error(w, "Unauthorized: invalid WebSocket token", http.StatusUnauthorized)
+			return
+		}
 
-			// Check user profile for avatar color
-			if user, err := s.store.Users().GetUserByID(r.Context(), userID); err == nil && user != nil {
-				if user.AvatarColor != "" {
-					userColor = user.AvatarColor
-				}
+		userID = claims.UserID
+		userName = claims.DisplayName
+
+		// Check user profile for avatar color
+		if user, err := s.store.Users().GetUserByID(r.Context(), userID); err == nil && user != nil {
+			if user.AvatarColor != "" {
+				userColor = user.AvatarColor
 			}
 		}
 	}
 
 	// Fallbacks if not authenticated via token
 	if userID == "" {
-		userID = query.Get("userId")
-		if userID == "" {
+		if boardID == "default" || strings.HasPrefix(boardID, "test-") {
+			userID = query.Get("userId")
+			if userID == "" {
+				userID = "anonymous-" + randomID(8)
+			}
+		} else {
 			userID = "anonymous-" + randomID(8)
 		}
 	}

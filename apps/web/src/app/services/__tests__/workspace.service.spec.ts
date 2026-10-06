@@ -92,7 +92,7 @@ describe('WorkspaceService', () => {
   });
 
   it('loads workspaces successfully and updates signal', async () => {
-    mockHttpClient.get.mockReturnValue(of(mockWorkspaces));
+    mockHttpClient.get.mockReturnValue(of({ workspaces: mockWorkspaces }));
 
     const res = await new Promise<Workspace[]>((resolve, reject) => {
       workspaceService.loadWorkspaces().subscribe({
@@ -117,7 +117,7 @@ describe('WorkspaceService', () => {
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z'
     };
-    mockHttpClient.post.mockReturnValue(of(newWs));
+    mockHttpClient.post.mockReturnValue(of({ workspace: newWs }));
 
     const res = await new Promise<Workspace>((resolve, reject) => {
       workspaceService.createWorkspace({ name: 'Brand New', description: 'Desc' }).subscribe({
@@ -131,7 +131,7 @@ describe('WorkspaceService', () => {
   });
 
   it('loads workspace members', async () => {
-    mockHttpClient.get.mockReturnValue(of(mockMembers));
+    mockHttpClient.get.mockReturnValue(of({ members: mockMembers }));
 
     const res = await new Promise<WorkspaceMember[]>((resolve, reject) => {
       workspaceService.loadMembers('ws_1').subscribe({

@@ -1,6 +1,6 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
+import { Observable, map, tap } from 'rxjs';
 import { AuthService } from './auth.service';
 import { Board, UserRole } from '../models/auth.models';
 
@@ -23,6 +23,9 @@ export class BoardService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: Board[] | { boards?: Board[] }) =>
+          Array.isArray(response) ? response : response.boards ?? []
+        ),
         tap({
           next: (bList) => {
             this.boards.set(bList || []);
@@ -42,6 +45,9 @@ export class BoardService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: Board | { board?: Board }) =>
+          'board' in response && response.board ? response.board : response as Board
+        ),
         tap((newBoard) => {
           this.boards.update((list) => [newBoard, ...list]);
         })
@@ -55,6 +61,9 @@ export class BoardService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: Board | { board?: Board }) =>
+          'board' in response && response.board ? response.board : response as Board
+        ),
         tap({
           next: (board) => {
             this.currentBoard.set(board);
@@ -77,6 +86,9 @@ export class BoardService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: Board | { board?: Board }) =>
+          'board' in response && response.board ? response.board : response as Board
+        ),
         tap((updated) => {
           this.boards.update((list) =>
             list.map((b) => (b.id === boardId ? { ...b, ...updated } : b))

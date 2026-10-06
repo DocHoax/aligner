@@ -1,6 +1,6 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
+import { Observable, map, tap } from 'rxjs';
 import { AuthService } from './auth.service';
 import { Workspace, WorkspaceMember, UserRole } from '../models/auth.models';
 
@@ -25,6 +25,9 @@ export class WorkspaceService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: Workspace[] | { workspaces?: Workspace[] }) =>
+          Array.isArray(response) ? response : response.workspaces ?? []
+        ),
         tap({
           next: (wsList) => {
             this.workspaces.set(wsList || []);
@@ -42,6 +45,9 @@ export class WorkspaceService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: Workspace | { workspace?: Workspace }) =>
+          'workspace' in response && response.workspace ? response.workspace : response as Workspace
+        ),
         tap({
           next: (ws) => {
             this.currentWorkspace.set(ws);
@@ -58,6 +64,9 @@ export class WorkspaceService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: Workspace | { workspace?: Workspace }) =>
+          'workspace' in response && response.workspace ? response.workspace : response as Workspace
+        ),
         tap((ws) => {
           this.workspaces.update((list) => [ws, ...list]);
         })
@@ -73,6 +82,9 @@ export class WorkspaceService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: Workspace | { workspace?: Workspace }) =>
+          'workspace' in response && response.workspace ? response.workspace : response as Workspace
+        ),
         tap((updated) => {
           this.workspaces.update((list) =>
             list.map((w) => (w.id === workspaceId ? { ...w, ...updated } : w))
@@ -105,6 +117,9 @@ export class WorkspaceService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: WorkspaceMember[] | { members?: WorkspaceMember[] }) =>
+          Array.isArray(response) ? response : response.members ?? []
+        ),
         tap((mList) => {
           this.members.set(mList || []);
         })
@@ -120,6 +135,9 @@ export class WorkspaceService {
         headers: this.authService.getAuthHeaders()
       })
       .pipe(
+        map((response: WorkspaceMember | { member?: WorkspaceMember }) =>
+          'member' in response && response.member ? response.member : response as WorkspaceMember
+        ),
         tap((newMem) => {
           this.members.update((list) => {
             const exists = list.some((m) => m.userId === newMem.userId);
@@ -144,6 +162,9 @@ export class WorkspaceService {
         { headers: this.authService.getAuthHeaders() }
       )
       .pipe(
+        map((response: WorkspaceMember | { member?: WorkspaceMember }) =>
+          'member' in response && response.member ? response.member : response as WorkspaceMember
+        ),
         tap((updated) => {
           this.members.update((list) =>
             list.map((m) => (m.userId === userId ? { ...m, role: updated.role } : m))

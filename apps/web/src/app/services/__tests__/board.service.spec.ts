@@ -81,7 +81,7 @@ describe('BoardService', () => {
   });
 
   it('loads workspace boards and updates signal', async () => {
-    mockHttpClient.get.mockReturnValue(of(mockBoards));
+    mockHttpClient.get.mockReturnValue(of({ boards: mockBoards }));
 
     const res = await new Promise<Board[]>((resolve, reject) => {
       boardService.loadBoards('ws_1').subscribe({
@@ -107,7 +107,7 @@ describe('BoardService', () => {
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z'
     };
-    mockHttpClient.post.mockReturnValue(of(newBoard));
+    mockHttpClient.post.mockReturnValue(of({ board: newBoard }));
 
     const res = await new Promise<Board>((resolve, reject) => {
       boardService.createBoard('ws_1', { name: 'New Diagram', description: 'New diagram description' }).subscribe({
@@ -121,7 +121,7 @@ describe('BoardService', () => {
   });
 
   it('retrieves single board details and sets current board state', async () => {
-    mockHttpClient.get.mockReturnValue(of(mockBoards[0]));
+    mockHttpClient.get.mockReturnValue(of({ board: mockBoards[0] }));
 
     const res = await new Promise<Board>((resolve, reject) => {
       boardService.getBoard('brd_1').subscribe({

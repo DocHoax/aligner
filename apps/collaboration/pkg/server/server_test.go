@@ -77,3 +77,21 @@ func TestServer_WebSocketConnection(t *testing.T) {
 		t.Fatalf("expected 'joined' message, got '%s'", srvMsg.Type)
 	}
 }
+
+func TestServer_WebSocketRejectsInvalidToken(t *testing.T) {
+	hub := rooms.NewHub()
+	srv := NewServer(hub)
+	testServer := httptest.NewServer(srv.Routes())
+	defer testServer.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") +
+		"/ws?boardId=test-ws-board&userId=owner-user&token=invalid-token"
+
+	_, response, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err == nil {
+		t.Fatal("expected invalid WebSocket token to be rejected")
+	}
+	if response == nil || response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for invalid WebSocket token, got response %#v", response)
+	}
+}
