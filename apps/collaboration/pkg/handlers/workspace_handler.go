@@ -8,16 +8,22 @@ import (
 
 	"alignify/collaboration/pkg/auth"
 	"alignify/collaboration/pkg/models"
+	"alignify/collaboration/pkg/rooms"
 	"alignify/collaboration/pkg/storage"
 	"alignify/collaboration/pkg/utils"
 )
 
 type WorkspaceHandler struct {
 	store storage.Storage
+	hub   *rooms.Hub
 }
 
-func NewWorkspaceHandler(store storage.Storage) *WorkspaceHandler {
-	return &WorkspaceHandler{store: store}
+func NewWorkspaceHandler(store storage.Storage, hubs ...*rooms.Hub) *WorkspaceHandler {
+	var h *rooms.Hub
+	if len(hubs) > 0 {
+		h = hubs[0]
+	}
+	return &WorkspaceHandler{store: store, hub: h}
 }
 
 type CreateWorkspaceRequest struct {
@@ -362,6 +368,15 @@ func (h *WorkspaceHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Propagate updated role to any active board rooms in this workspace
+	if h.hub != nil {
+		if boards, err := h.store.Boards().GetBoardsByWorkspaceID(r.Context(), workspaceID); err == nil {
+			for _, b := range boards {
+				h.hub.UpdateUserRoleInBoard(b.ID, memberUserID, req.Role)
+			}
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Role updated successfully",
@@ -391,6 +406,15 @@ func (h *WorkspaceHandler) RemoveMember(w http.ResponseWriter, r *http.Request, 
 	if err := h.store.Workspaces().RemoveMember(r.Context(), workspaceID, memberUserID); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Failed to remove member: "+err.Error())
 		return
+	}
+
+	// Terminate active WebSocket sessions in this workspace's boards
+	if h.hub != nil {
+		if boards, err := h.store.Boards().GetBoardsByWorkspaceID(r.Context(), workspaceID); err == nil {
+			for _, b := range boards {
+				h.hub.DisconnectUserFromBoard(b.ID, memberUserID, "Membership revoked from workspace")
+			}
+		}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{

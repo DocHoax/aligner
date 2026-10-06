@@ -34,6 +34,7 @@ type Server struct {
 	hub           *rooms.Hub
 	store         storage.Storage
 	jwtManager    *auth.JWTManager
+	ticketStore   *auth.TicketStore
 	authHandler   *handlers.AuthHandler
 	workspaceHdlr *handlers.WorkspaceHandler
 	boardHdlr     *handlers.BoardHandler
@@ -62,13 +63,15 @@ func NewServer(hub *rooms.Hub, stores ...storage.Storage) *Server {
 
 	jwtManager := auth.NewJWTManager(secret, 7*24*time.Hour)
 	authMw := auth.NewAuthMiddleware(jwtManager)
+	ticketStore := auth.NewTicketStore(60 * time.Second)
 
 	return &Server{
 		hub:           hub,
 		store:         store,
 		jwtManager:    jwtManager,
+		ticketStore:   ticketStore,
 		authHandler:   handlers.NewAuthHandler(store, jwtManager),
-		workspaceHdlr: handlers.NewWorkspaceHandler(store),
+		workspaceHdlr: handlers.NewWorkspaceHandler(store, hub),
 		boardHdlr:     handlers.NewBoardHandler(store),
 		commentHdlr:   handlers.NewCommentHandler(store),
 		activityHdlr:  handlers.NewActivityHandler(store),
