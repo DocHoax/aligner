@@ -2,10 +2,12 @@ package ai_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"alignify/collaboration/pkg/ai"
+	"alignify/collaboration/pkg/protocol"
 )
 
 func TestMockAIProvider_GenerateDiagram(t *testing.T) {
@@ -249,12 +251,12 @@ func TestMockAIProvider_AnalyzeDiagram(t *testing.T) {
 		t.Fatalf("AnalyzeDiagram failed: %v", err)
 	}
 
-	if resp == nil || resp.Report == nil {
-		t.Fatal("Expected non-nil AnalysisReport")
+	if resp == nil {
+		t.Fatal("Expected non-nil AnalyzeResponse")
 	}
 
 	if resp.Report.OverallScore <= 0 || resp.Report.OverallScore > 100 {
-		t.Errorf("Expected score between 1 and 100, got %d", resp.Report.OverallScore)
+		t.Errorf("Expected score between 1 and 100, got %f", resp.Report.OverallScore)
 	}
 
 	if len(resp.Report.Findings) == 0 {
@@ -263,7 +265,7 @@ func TestMockAIProvider_AnalyzeDiagram(t *testing.T) {
 
 	hasSpofFinding := false
 	for _, finding := range resp.Report.Findings {
-		if finding.Category == ai.FindingCategorySPOF || strings.Contains(strings.ToLower(finding.Title), "spof") || strings.Contains(strings.ToLower(finding.Title), "database") {
+		if finding.Category == ai.CategorySPOF || strings.Contains(strings.ToLower(finding.Title), "spof") || strings.Contains(strings.ToLower(finding.Title), "database") {
 			hasSpofFinding = true
 			break
 		}
@@ -293,8 +295,8 @@ func TestMockAIProvider_ExplainDiagram(t *testing.T) {
 	}
 
 	req := ai.ExplainRequest{
-		Prompt:  "How does data flow through this system and what are the failure modes?",
-		Objects: objects,
+		Question: "How does data flow through this system and what are the failure modes?",
+		Objects:  objects,
 	}
 
 	resp, err := provider.ExplainDiagram(ctx, req)
@@ -302,15 +304,15 @@ func TestMockAIProvider_ExplainDiagram(t *testing.T) {
 		t.Fatalf("ExplainDiagram failed: %v", err)
 	}
 
-	if resp == nil || resp.Explanation == nil {
-		t.Fatal("Expected non-nil ArchitectureExplanation")
+	if resp == nil {
+		t.Fatal("Expected non-nil ExplainResponse")
 	}
 
-	if resp.Explanation.Overview == "" {
-		t.Error("Expected non-empty explanation Overview")
+	if resp.Explanation.Summary == "" && resp.Explanation.FullText == "" {
+		t.Error("Expected non-empty explanation Summary or FullText")
 	}
 
-	if len(resp.Explanation.DataFlows) == 0 {
+	if len(resp.Explanation.DataFlowJourney) == 0 {
 		t.Error("Expected at least one data flow step")
 	}
 }
@@ -414,14 +416,18 @@ func TestMermaidEngine_ExportAndImport(t *testing.T) {
 
 func TestValidator_SafetyGuards(t *testing.T) {
 	// 1. Max operations safety cap
-	tooManyOps := make([]map[string]interface{}, 250)
+	tooManyOps := make([]protocol.DocumentOperation, 250)
 	for i := range tooManyOps {
-		tooManyOps[i] = map[string]interface{}{
-			"op":   "create",
-			"type": "rectangle",
-			"id":   "obj_1",
-			"x":    10.0,
-			"y":    10.0,
+		tooManyOps[i] = protocol.DocumentOperation{
+			Op: "create",
+			Object: map[string]interface{}{
+				"id":     fmt.Sprintf("obj_%d", i),
+				"type":   "rectangle",
+				"x":      10.0,
+				"y":      10.0,
+				"width":  100.0,
+				"height": 100.0,
+			},
 		}
 	}
 
@@ -430,15 +436,17 @@ func TestValidator_SafetyGuards(t *testing.T) {
 	}
 
 	// 2. Coordinate bounds check
-	outOfBoundsOp := []map[string]interface{}{
+	outOfBoundsOp := []protocol.DocumentOperation{
 		{
-			"op":     "create",
-			"type":   "rectangle",
-			"id":     "obj_oob",
-			"x":      500000.0,
-			"y":      10.0,
-			"width":  100.0,
-			"height": 100.0,
+			Op: "create",
+			Object: map[string]interface{}{
+				"id":     "obj_oob",
+				"type":   "rectangle",
+				"x":      500000.0,
+				"y":      10.0,
+				"width":  100.0,
+				"height": 100.0,
+			},
 		},
 	}
 
@@ -447,15 +455,17 @@ func TestValidator_SafetyGuards(t *testing.T) {
 	}
 
 	// 3. Invalid object type
-	invalidTypeOp := []map[string]interface{}{
+	invalidTypeOp := []protocol.DocumentOperation{
 		{
-			"op":     "create",
-			"type":   "malicious_script_tag",
-			"id":     "obj_bad",
-			"x":      10.0,
-			"y":      10.0,
-			"width":  100.0,
-			"height": 100.0,
+			Op: "create",
+			Object: map[string]interface{}{
+				"id":     "obj_bad",
+				"type":   "malicious_script_tag",
+				"x":      10.0,
+				"y":      10.0,
+				"width":  100.0,
+				"height": 100.0,
+			},
 		},
 	}
 

@@ -28,6 +28,8 @@ func (p *MockAIProvider) GenerateDiagram(ctx context.Context, req GenerateReques
 	var diagram ArchitectureDiagram
 
 	switch {
+	case strings.Contains(promptLower, "e-commerce") || strings.Contains(promptLower, "ecommerce") || strings.Contains(promptLower, "shop") || strings.Contains(promptLower, "store") || strings.Contains(promptLower, "cart"):
+		diagram = p.buildECommerceDiagram()
 	case strings.Contains(promptLower, "fintech") || strings.Contains(promptLower, "payment") || strings.Contains(promptLower, "bank") || strings.Contains(promptLower, "pci"):
 		diagram = p.buildFintechDiagram()
 	case strings.Contains(promptLower, "event") || strings.Contains(promptLower, "stream") || strings.Contains(promptLower, "kafka") || strings.Contains(promptLower, "analytics"):

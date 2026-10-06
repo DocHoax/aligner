@@ -157,9 +157,7 @@ func (m *MermaidEngine) ImportFromMermaid(mermaidText string) (*GenerateResponse
 	reHeader := regexp.MustCompile(`(?i)^\s*(?:flowchart|graph)\s+(TD|TB|LR|RL|BT)`)
 	reSubgraph := regexp.MustCompile(`(?i)^\s*subgraph\s+([A-Za-z0-9_]+)(?:\s*\["([^"]+)"\])?`)
 	reEnd := regexp.MustCompile(`(?i)^\s*end\s*$`)
-	reEdgeWithLabel := regexp.MustCompile(`(?i)^\s*([A-Za-z0-9_]+)\s*(-->|-.->|==>)\s*\|"([^"]+)"\|\s*([A-Za-z0-9_]+)`)
-	reEdgeSimple := regexp.MustCompile(`(?i)^\s*([A-Za-z0-9_]+)\s*(-->|-.->|==>)\s*([A-Za-z0-9_]+)`)
-	reNodeWithLabel := regexp.MustCompile(`(?i)^\s*([A-Za-z0-9_]+)\s*(\[|\(\[|\{\{|\(\()(?:"([^"]+)"|([^"\]\)\}\)]+))(\]|\)\]|\}\}|\)\))`)
+	reEdgeGeneral := regexp.MustCompile(`(?i)^\s*(.+?)\s*(-->|-.->|==>|---\>)\s*(?:\|"([^"]+)"\|\s*|\|([^|]+)\|\s*)?(.+?)\s*$`)
 
 	for _, rawLine := range lines {
 		line := strings.TrimSpace(rawLine)
@@ -203,15 +201,21 @@ func (m *MermaidEngine) ImportFromMermaid(mermaidText string) (*GenerateResponse
 			continue
 		}
 
-		// 4. Check Labeled Edge (e.g. A -->|"HTTPS"| B)
-		if match := reEdgeWithLabel.FindStringSubmatch(line); len(match) > 4 {
-			fromRaw := match[1]
+		// 4. Check Edge (e.g. A --> B, A[Gateway] --> B[Service], GW -->|"HTTPS"| Auth)
+		if match := reEdgeGeneral.FindStringSubmatch(line); len(match) > 5 {
+			leftChunk := match[1]
 			arrowStyle := match[2]
 			edgeLabel := match[3]
-			toRaw := match[4]
+			if edgeLabel == "" {
+				edgeLabel = match[4]
+			}
+			rightChunk := match[5]
 
-			fromNode := ensureNodeExists(fromRaw, fromRaw, &nodes, nodeMap, currentFrame)
-			toNode := ensureNodeExists(toRaw, toRaw, &nodes, nodeMap, currentFrame)
+			fromRaw, fromLabel := parseNodeChunk(leftChunk)
+			toRaw, toLabel := parseNodeChunk(rightChunk)
+
+			fromNode := ensureNodeExists(fromRaw, fromLabel, &nodes, nodeMap, currentFrame)
+			toNode := ensureNodeExists(toRaw, toLabel, &nodes, nodeMap, currentFrame)
 
 			style := "solid"
 			if strings.Contains(arrowStyle, "-.-") {
@@ -231,43 +235,10 @@ func (m *MermaidEngine) ImportFromMermaid(mermaidText string) (*GenerateResponse
 			continue
 		}
 
-		// 5. Check Simple Edge (e.g. A --> B)
-		if match := reEdgeSimple.FindStringSubmatch(line); len(match) > 3 {
-			fromRaw := match[1]
-			arrowStyle := match[2]
-			toRaw := match[3]
-
-			fromNode := ensureNodeExists(fromRaw, fromRaw, &nodes, nodeMap, currentFrame)
-			toNode := ensureNodeExists(toRaw, toRaw, &nodes, nodeMap, currentFrame)
-
-			style := "solid"
-			if strings.Contains(arrowStyle, "-.-") {
-				style = "dashed"
-			}
-
-			edge := ArchitectureEdge{
-				ID:        utils.GenerateID("edge"),
-				FromID:    fromNode.ID,
-				ToID:      toNode.ID,
-				Direction: "unidirectional",
-				Style:     style,
-			}
-			edges = append(edges, edge)
-			continue
-		}
-
-		// 6. Check Explicit Node Declaration (e.g. A["API Gateway"])
-		if match := reNodeWithLabel.FindStringSubmatch(line); len(match) > 3 {
-			nodeIDRaw := match[1]
-			nodeLabel := match[3]
-			if nodeLabel == "" && len(match) > 4 {
-				nodeLabel = match[4]
-			}
-			if nodeLabel == "" {
-				nodeLabel = nodeIDRaw
-			}
-
-			ensureNodeExists(nodeIDRaw, nodeLabel, &nodes, nodeMap, currentFrame)
+		// 5. Check Explicit Standalone Node Declaration (e.g. GW["API Gateway"] or DB[("Postgres")])
+		rawID, label := parseNodeChunk(line)
+		if rawID != "" && !strings.EqualFold(rawID, "end") && !strings.EqualFold(rawID, "subgraph") {
+			ensureNodeExists(rawID, label, &nodes, nodeMap, currentFrame)
 			continue
 		}
 	}
@@ -293,6 +264,29 @@ func (m *MermaidEngine) ImportFromMermaid(mermaidText string) (*GenerateResponse
 		Operations: ops,
 		Summary:    diagram.Summary,
 	}, nil
+}
+
+var reNodeExtraction = regexp.MustCompile(`(?i)^([A-Za-z0-9_]+)(?:\s*[\(\[\{]+(?:"([^"]+)"|'([^']+)'|([^"\]\)\}\)]+))[\)\]\}]+)?$`)
+
+func parseNodeChunk(chunk string) (string, string) {
+	chunk = strings.TrimSpace(chunk)
+	if chunk == "" {
+		return "", ""
+	}
+	match := reNodeExtraction.FindStringSubmatch(chunk)
+	if len(match) > 1 {
+		rawID := match[1]
+		label := match[1]
+		if match[2] != "" {
+			label = match[2]
+		} else if match[3] != "" {
+			label = match[3]
+		} else if match[4] != "" {
+			label = strings.TrimSpace(match[4])
+		}
+		return rawID, label
+	}
+	return chunk, chunk
 }
 
 func ensureNodeExists(rawID, label string, nodes *[]ArchitectureNode, nodeMap map[string]*ArchitectureNode, currentFrame *ArchitectureFrame) *ArchitectureNode {

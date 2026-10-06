@@ -117,7 +117,7 @@ func TestAIHandler_Generate(t *testing.T) {
 	}
 
 	// Verify activity was logged
-	activities, _ := store.Activity().GetBoardActivities(context.Background(), board.ID, 10, 0)
+	activities, _ := store.Activity().GetActivitiesByBoardID(context.Background(), board.ID, 10, 0)
 	if len(activities) == 0 {
 		t.Error("Expected activity logged for AI generation")
 	}
@@ -208,7 +208,7 @@ func TestAIHandler_Analyze(t *testing.T) {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if resp.Report == nil || resp.Report.OverallScore == 0 {
+	if resp.Report.OverallScore == 0 {
 		t.Error("Expected valid analysis report with score")
 	}
 }
@@ -217,7 +217,7 @@ func TestAIHandler_Explain(t *testing.T) {
 	_, _, aiHandler, editor, _, board := setupAITestEnv(t)
 
 	payload := map[string]interface{}{
-		"prompt": "Explain the architecture and data flows",
+		"question": "Explain the architecture and data flows",
 	}
 	body, _ := json.Marshal(payload)
 
@@ -236,8 +236,8 @@ func TestAIHandler_Explain(t *testing.T) {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if resp.Explanation == nil || resp.Explanation.Overview == "" {
-		t.Error("Expected valid architecture explanation overview")
+	if resp.Explanation.Summary == "" && resp.Explanation.FullText == "" {
+		t.Error("Expected valid architecture explanation summary or full text")
 	}
 }
 
