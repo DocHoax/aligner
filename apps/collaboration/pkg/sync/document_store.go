@@ -269,3 +269,31 @@ func (s *DocumentStore) Hydrate(objects []map[string]interface{}, snapshotSeq in
 
 	return nil
 }
+
+// ResetToState replaces all objects and updates sequence.
+func (s *DocumentStore) ResetToState(objects []map[string]interface{}, newSeq int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.objects = make(map[string]map[string]interface{})
+	s.order = make([]string, 0, len(objects))
+
+	for _, obj := range objects {
+		idVal, ok := obj["id"]
+		if !ok {
+			continue
+		}
+		idStr, ok := idVal.(string)
+		if !ok || idStr == "" {
+			continue
+		}
+
+		objCopy := make(map[string]interface{}, len(obj))
+		for k, v := range obj {
+			objCopy[k] = v
+		}
+		s.objects[idStr] = objCopy
+		s.order = append(s.order, idStr)
+	}
+	s.seq = newSeq
+}

@@ -403,6 +403,17 @@ func (r *Room) cleanup() {
 	r.userToClient = make(map[string]*client.Client)
 }
 
+// RestoreFromSnapshot resets the room document state from a snapshot and broadcasts to all clients.
+func (r *Room) RestoreFromSnapshot(objects []map[string]interface{}, seq int64, restoredBy string) {
+	r.docStore.ResetToState(objects, seq)
+	snapshotMsg := protocol.SnapshotPayload{
+		BoardID: r.BoardID,
+		Objects: objects,
+		Seq:     seq,
+	}
+	r.Broadcast(protocol.NewServerMessage("snapshot", r.BoardID, snapshotMsg))
+}
+
 // ClientCount returns the number of active clients in this room.
 func (r *Room) ClientCount() int {
 	r.mu.RLock()
