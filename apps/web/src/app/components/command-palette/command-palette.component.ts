@@ -13,7 +13,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.service';
-import { ToolType } from '@alignify/shared-types';
 
 export interface CommandItem {
   id: string;

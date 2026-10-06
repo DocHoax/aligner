@@ -252,11 +252,11 @@ export class BoardCanvasComponent implements OnInit, OnDestroy {
   panToLocation(loc: { x: number; y: number }): void {
     const engine = this.bridge.getEngine();
     if (engine) {
-      engine.getCamera().setTarget(-loc.x, -loc.y);
+      engine.getCamera().setState({ x: -loc.x, y: -loc.y });
     }
   }
 
-  onVersionRestored(restoredSeq: number): void {
+  onVersionRestored(_restoredSeq: number): void {
     // Optionally reload board details or audit log
     const id = this.currentBoardId();
     if (id) {

@@ -10,7 +10,6 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.service';
-import { CanvasObject, Bounds } from '@alignify/shared-types';
 
 @Component({
   selector: 'app-minimap',
@@ -64,7 +63,6 @@ export class MinimapComponent implements AfterViewInit, OnDestroy {
   @ViewChild('minimapCanvas') canvasRef?: ElementRef<HTMLCanvasElement>;
 
   private animFrameId: number | null = null;
-  private isDragging = false;
 
   constructor() {
     effect(() => {
@@ -183,7 +181,7 @@ export class MinimapComponent implements AfterViewInit, OnDestroy {
 
     const engine = this.bridge.getEngine();
     if (engine) {
-      engine.getCamera().setTarget(-relX, -relY);
+      engine.getCamera().setState({ x: relX, y: relY });
     }
   }
 }

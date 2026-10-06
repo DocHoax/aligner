@@ -1,7 +1,7 @@
-import { Component, inject, signal, computed, output } from '@angular/core';
+import { Component, inject, computed, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.service';
-import { CanvasObject, ToolType } from '@alignify/shared-types';
+import { CanvasObject } from '@alignify/shared-types';
 
 @Component({
   selector: 'app-layers-panel',

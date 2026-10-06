@@ -109,10 +109,11 @@ import { BoardComment } from '../../models/auth.models';
         } @else {
           @for (cmt of filteredComments(); track cmt.id) {
             <div
-              class="bg-slate-950/60 border rounded-xl p-3.5 space-y-3 transition-colors text-xs"
-              [class.border-slate-800]="!cmt.resolved"
-              [class.border-emerald-900/40]="cmt.resolved"
-              [class.bg-emerald-950/10]="cmt.resolved"
+              class="border rounded-xl p-3.5 space-y-3 transition-colors text-xs"
+              [ngClass]="{
+                'bg-slate-950/60 border-slate-800': !cmt.resolved,
+                'bg-emerald-950/10 border-emerald-900/40': cmt.resolved
+              }"
             >
               <!-- Author Row -->
               <div class="flex items-center justify-between">
@@ -153,7 +154,7 @@ import { BoardComment } from '../../models/auth.models';
                       </svg>
                     } @else {
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <circle cx="12" cy="12" r="9" stroke-width="2"/>
+                        <circle cx="12" cy="12" r="9" stroke-width="2"></circle>
                       </svg>
                     }
                   </button>

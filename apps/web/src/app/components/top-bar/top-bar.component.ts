@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, inject, signal, output, input } from '@angular/core';
+import { Component, ElementRef, ViewChild, inject, signal, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -56,15 +56,11 @@ const AVAILABLE_COLORS = [
           <!-- Role Badge -->
           <span
             class="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border"
-            [class.bg-purple-950/60]="boardService.currentBoardRole() === 'owner'"
-            [class.text-purple-400]="boardService.currentBoardRole() === 'owner'"
-            [class.border-purple-800/40]="boardService.currentBoardRole() === 'owner'"
-            [class.bg-blue-950/60]="boardService.currentBoardRole() === 'editor'"
-            [class.text-blue-400]="boardService.currentBoardRole() === 'editor'"
-            [class.border-blue-800/40]="boardService.currentBoardRole() === 'editor'"
-            [class.bg-slate-800]="boardService.currentBoardRole() === 'viewer'"
-            [class.text-slate-400]="boardService.currentBoardRole() === 'viewer'"
-            [class.border-slate-700]="boardService.currentBoardRole() === 'viewer'"
+            [ngClass]="{
+              'bg-purple-950/60 text-purple-400 border-purple-800/40': boardService.currentBoardRole() === 'owner',
+              'bg-blue-950/60 text-blue-400 border-blue-800/40': boardService.currentBoardRole() === 'editor',
+              'bg-slate-800 text-slate-400 border-slate-700': boardService.currentBoardRole() === 'viewer'
+            }"
           >
             {{ boardService.currentBoardRole() }}
           </span>

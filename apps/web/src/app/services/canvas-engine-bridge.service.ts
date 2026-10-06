@@ -272,9 +272,9 @@ export class CanvasEngineBridgeService implements OnDestroy {
     const obj = this.engine.getStore().get(id);
     if (!obj) return;
     if (additive) {
-      this.engine.getSelection().toggle(obj);
+      this.engine.getSelection().toggle(id);
     } else {
-      this.engine.getSelection().setSingle(obj);
+      this.engine.getSelection().select(id);
     }
   }
 

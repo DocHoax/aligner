@@ -1,9 +1,8 @@
-import { Component, OnInit, inject, signal, input, output } from '@angular/core';
+import { Component, OnInit, inject, signal, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { WorkspaceService } from '../../services/workspace.service';
 import { AuthService } from '../../services/auth.service';
-import { WorkspaceMember } from '../../models/auth.models';
 
 @Component({
   selector: 'app-share-dialog',
@@ -110,26 +109,25 @@ import { WorkspaceMember } from '../../models/auth.models';
             <div class="space-y-2">
               <label class="text-xs font-semibold uppercase tracking-wider text-slate-400">Collaborators & Members</label>
               <div class="bg-slate-950/60 border border-slate-800 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-800/60">
-                @for (member of workspaceService.members(); track member.id) {
+                @for (member of workspaceService.members(); track member.userId || member.email) {
                   <div class="px-3.5 py-2.5 flex items-center justify-between text-xs">
                     <div class="flex items-center gap-2.5">
                       <div class="w-6 h-6 rounded-full bg-indigo-600/40 border border-indigo-500/40 flex items-center justify-center text-[10px] font-bold text-indigo-300 uppercase">
-                        {{ member.name.charAt(0) }}
+                        {{ (member.name || member.email || 'U').charAt(0) }}
                       </div>
                       <div>
-                        <div class="font-medium text-slate-200">{{ member.name }}</div>
+                        <div class="font-medium text-slate-200">{{ member.name || member.email }}</div>
                         <div class="text-[10px] text-slate-500">{{ member.email }}</div>
                       </div>
                     </div>
 
                     <span
                       class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
-                      [class.bg-amber-500/20]="member.role === 'owner'"
-                      [class.text-amber-300]="member.role === 'owner'"
-                      [class.bg-indigo-500/20]="member.role === 'editor'"
-                      [class.text-indigo-300]="member.role === 'editor'"
-                      [class.bg-slate-800]="member.role === 'viewer'"
-                      [class.text-slate-400]="member.role === 'viewer'"
+                      [ngClass]="{
+                        'bg-amber-500/20 text-amber-300': member.role === 'owner',
+                        'bg-indigo-500/20 text-indigo-300': member.role === 'editor',
+                        'bg-slate-800 text-slate-400': member.role === 'viewer'
+                      }"
                     >
                       {{ member.role }}
                     </span>
@@ -191,7 +189,7 @@ export class ShareDialogComponent implements OnInit {
     if (!email || !wsId || this.isInviting()) return;
 
     this.isInviting.set(true);
-    this.workspaceService.addMember(wsId, email, this.inviteRole).subscribe({
+    this.workspaceService.inviteMember(wsId, { email, role: this.inviteRole }).subscribe({
       next: () => {
         this.inviteEmail = '';
         this.isInviting.set(false);
