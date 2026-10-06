@@ -9,6 +9,9 @@ export * from './math/mat2d';
 export * from './math/bounds';
 export * from './math/hit-test';
 export * from './math/snap';
+export * from './math/alignment';
+export * from './math/distribution';
+export * from './math/snapping';
 
 // Camera
 export * from './camera/camera';
