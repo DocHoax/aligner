@@ -97,14 +97,15 @@ type WorkspaceMember struct {
 
 // Board represents a diagram/canvas document within a workspace
 type Board struct {
-	ID          string    `json:"id"`
-	WorkspaceID string    `json:"workspaceId"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedBy   string    `json:"createdBy"`
-	IsPublic    bool      `json:"isPublic"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID           string    `json:"id"`
+	WorkspaceID  string    `json:"workspaceId"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	CreatedBy    string    `json:"createdBy"`
+	IsPublic     bool      `json:"isPublic"`
+	ThumbnailURL string    `json:"thumbnailUrl,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // BoardWithRole includes effective role for the current user
@@ -112,6 +113,7 @@ type BoardWithRole struct {
 	Board
 	UserRole      Role   `json:"userRole"`
 	WorkspaceName string `json:"workspaceName,omitempty"`
+	IsFavorite    bool   `json:"isFavorite"`
 }
 
 // BoardPermission represents explicit board-level permissions (optional override)
@@ -122,6 +124,46 @@ type BoardPermission struct {
 	Role      Role      `json:"role"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// BoardComment represents a threaded comment or spatial pin on a board
+type BoardComment struct {
+	ID              string         `json:"id"`
+	BoardID         string         `json:"boardId"`
+	ParentID        *string        `json:"parentId,omitempty"`
+	UserID          string         `json:"userId"`
+	UserName        string         `json:"userName,omitempty"`
+	UserAvatarColor string         `json:"userAvatarColor,omitempty"`
+	Content         string         `json:"content"`
+	X               *float64       `json:"x,omitempty"`
+	Y               *float64       `json:"y,omitempty"`
+	TargetObjectID  *string        `json:"targetObjectId,omitempty"`
+	Resolved        bool           `json:"resolved"`
+	ResolvedBy      *string        `json:"resolvedBy,omitempty"`
+	ResolvedAt      *time.Time     `json:"resolvedAt,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+	Replies         []BoardComment `json:"replies,omitempty"`
+}
+
+// BoardActivity represents an audit event on a board
+type BoardActivity struct {
+	ID              int64           `json:"id"`
+	BoardID         string          `json:"boardId"`
+	UserID          string          `json:"userId"`
+	UserName        string          `json:"userName,omitempty"`
+	UserAvatarColor string          `json:"userAvatarColor,omitempty"`
+	ActionType      string          `json:"actionType"`
+	Description     string          `json:"description"`
+	Metadata        json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt       time.Time       `json:"createdAt"`
+}
+
+// BoardFavorite represents a user-starred board
+type BoardFavorite struct {
+	UserID    string    `json:"userId"`
+	BoardID   string    `json:"boardId"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // BoardSnapshot represents a compacted point-in-time state of a board

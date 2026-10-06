@@ -20,8 +20,12 @@ type MemoryStorage struct {
 	boardPerms   map[string]*models.BoardPermission   // key: boardID + ":" + userID
 	snapshots    map[string][]*models.BoardSnapshot   // key: boardID
 	operations   map[string][]*models.OperationRecord // key: boardID
+	comments     map[string]*models.BoardComment      // key: commentID
+	activities   map[string][]*models.BoardActivity   // key: boardID
+	favorites    map[string]bool                      // key: userID + ":" + boardID
 	snapshotSeq  int64
 	operationSeq int64
+	activitySeq  int64
 }
 
 func NewMemoryStorage() *MemoryStorage {
@@ -33,6 +37,9 @@ func NewMemoryStorage() *MemoryStorage {
 		boardPerms:  make(map[string]*models.BoardPermission),
 		snapshots:   make(map[string][]*models.BoardSnapshot),
 		operations:  make(map[string][]*models.OperationRecord),
+		comments:    make(map[string]*models.BoardComment),
+		activities:  make(map[string][]*models.BoardActivity),
+		favorites:   make(map[string]bool),
 	}
 }
 
@@ -54,6 +61,18 @@ func (m *MemoryStorage) Snapshots() SnapshotRepository {
 
 func (m *MemoryStorage) Operations() OperationRepository {
 	return &memoryOperationRepo{storage: m}
+}
+
+func (m *MemoryStorage) Comments() CommentRepository {
+	return &memoryCommentRepo{storage: m}
+}
+
+func (m *MemoryStorage) Activity() ActivityRepository {
+	return &memoryActivityRepo{storage: m}
+}
+
+func (m *MemoryStorage) Favorites() FavoriteRepository {
+	return &memoryFavoriteRepo{storage: m}
 }
 
 func (m *MemoryStorage) Close() error {
@@ -403,6 +422,78 @@ func (r *memoryBoardRepo) GetBoardsByWorkspaceID(ctx context.Context, workspaceI
 	return list, nil
 }
 
+func (r *memoryBoardRepo) GetBoardsByWorkspaceIDFiltered(ctx context.Context, workspaceID, userID, query, sortBy string, favoritesOnly bool) ([]models.BoardWithRole, error) {
+	r.storage.mu.RLock()
+	defer r.storage.mu.RUnlock()
+
+	ws, wsExists := r.storage.workspaces[workspaceID]
+	wsName := ""
+	if wsExists {
+		wsName = ws.Name
+	}
+
+	var result []models.BoardWithRole
+	queryLower := strings.ToLower(strings.TrimSpace(query))
+
+	for _, b := range r.storage.boards {
+		if b.WorkspaceID != workspaceID {
+			continue
+		}
+
+		// Text search
+		if queryLower != "" {
+			nameMatch := strings.Contains(strings.ToLower(b.Name), queryLower)
+			descMatch := strings.Contains(strings.ToLower(b.Description), queryLower)
+			if !nameMatch && !descMatch {
+				continue
+			}
+		}
+
+		// Favorites filter
+		favKey := userID + ":" + b.ID
+		isFav := r.storage.favorites[favKey]
+		if favoritesOnly && !isFav {
+			continue
+		}
+
+		// Effective role
+		role := models.RoleViewer
+		wkey := workspaceID + ":" + userID
+		if mem, ok := r.storage.memberships[wkey]; ok && mem.Role.IsValid() {
+			role = mem.Role
+		}
+		bkey := b.ID + ":" + userID
+		if perm, ok := r.storage.boardPerms[bkey]; ok && perm.Role.IsValid() {
+			role = perm.Role
+		}
+
+		result = append(result, models.BoardWithRole{
+			Board:         *b,
+			UserRole:      role,
+			WorkspaceName: wsName,
+			IsFavorite:    isFav,
+		})
+	}
+
+	// Sort
+	switch sortBy {
+	case "name":
+		sort.Slice(result, func(i, j int) bool {
+			return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+		})
+	case "created":
+		sort.Slice(result, func(i, j int) bool {
+			return result[i].CreatedAt.After(result[j].CreatedAt)
+		})
+	default: // "updated" or default
+		sort.Slice(result, func(i, j int) bool {
+			return result[i].UpdatedAt.After(result[j].UpdatedAt)
+		})
+	}
+
+	return result, nil
+}
+
 func (r *memoryBoardRepo) UpdateBoard(ctx context.Context, board *models.Board) error {
 	r.storage.mu.Lock()
 	defer r.storage.mu.Unlock()
@@ -414,6 +505,22 @@ func (r *memoryBoardRepo) UpdateBoard(ctx context.Context, board *models.Board) 
 	existing.Name = board.Name
 	existing.Description = board.Description
 	existing.IsPublic = board.IsPublic
+	if board.ThumbnailURL != "" {
+		existing.ThumbnailURL = board.ThumbnailURL
+	}
+	existing.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+func (r *memoryBoardRepo) UpdateBoardThumbnail(ctx context.Context, boardID, thumbnailURL string) error {
+	r.storage.mu.Lock()
+	defer r.storage.mu.Unlock()
+
+	existing, exists := r.storage.boards[boardID]
+	if !exists {
+		return ErrNotFound
+	}
+	existing.ThumbnailURL = thumbnailURL
 	existing.UpdatedAt = time.Now().UTC()
 	return nil
 }
@@ -428,6 +535,12 @@ func (r *memoryBoardRepo) DeleteBoard(ctx context.Context, id string) error {
 	delete(r.storage.boards, id)
 	delete(r.storage.snapshots, id)
 	delete(r.storage.operations, id)
+	delete(r.storage.activities, id)
+	for cid, c := range r.storage.comments {
+		if c.BoardID == id {
+			delete(r.storage.comments, cid)
+		}
+	}
 	return nil
 }
 
@@ -496,7 +609,6 @@ func (r *memorySnapshotRepo) GetLatestSnapshot(ctx context.Context, boardID stri
 		return nil, ErrNotFound
 	}
 
-	// Return snapshot with highest seq
 	var latest *models.BoardSnapshot
 	for _, s := range list {
 		if latest == nil || s.Seq > latest.Seq {
@@ -509,6 +621,45 @@ func (r *memorySnapshotRepo) GetLatestSnapshot(ctx context.Context, boardID stri
 	copy(copyData, latest.Data)
 	copyS.Data = json.RawMessage(copyData)
 	return &copyS, nil
+}
+
+func (r *memorySnapshotRepo) ListSnapshots(ctx context.Context, boardID string) ([]models.BoardSnapshot, error) {
+	r.storage.mu.RLock()
+	defer r.storage.mu.RUnlock()
+
+	list := r.storage.snapshots[boardID]
+	var result []models.BoardSnapshot
+	for _, s := range list {
+		copyS := *s
+		copyData := make([]byte, len(s.Data))
+		copy(copyData, s.Data)
+		copyS.Data = json.RawMessage(copyData)
+		result = append(result, copyS)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Seq > result[j].Seq
+	})
+
+	return result, nil
+}
+
+func (r *memorySnapshotRepo) GetSnapshotByID(ctx context.Context, id int64) (*models.BoardSnapshot, error) {
+	r.storage.mu.RLock()
+	defer r.storage.mu.RUnlock()
+
+	for _, list := range r.storage.snapshots {
+		for _, s := range list {
+			if s.ID == id {
+				copyS := *s
+				copyData := make([]byte, len(s.Data))
+				copy(copyData, s.Data)
+				copyS.Data = json.RawMessage(copyData)
+				return &copyS, nil
+			}
+		}
+	}
+	return nil, ErrNotFound
 }
 
 // ==========================================
@@ -566,4 +717,237 @@ func (r *memoryOperationRepo) GetOperationsAfterSeq(ctx context.Context, boardID
 	})
 
 	return result, nil
+}
+
+// ==========================================
+// Memory Comment Repository
+// ==========================================
+
+type memoryCommentRepo struct {
+	storage *MemoryStorage
+}
+
+func (r *memoryCommentRepo) CreateComment(ctx context.Context, comment *models.BoardComment) error {
+	r.storage.mu.Lock()
+	defer r.storage.mu.Unlock()
+
+	now := time.Now().UTC()
+	if comment.CreatedAt.IsZero() {
+		comment.CreatedAt = now
+	}
+	if comment.UpdatedAt.IsZero() {
+		comment.UpdatedAt = now
+	}
+
+	// Populate user info if available
+	if u, ok := r.storage.users[comment.UserID]; ok {
+		comment.UserName = u.DisplayName
+		comment.UserAvatarColor = u.AvatarColor
+	}
+
+	copyC := *comment
+	r.storage.comments[comment.ID] = &copyC
+	return nil
+}
+
+func (r *memoryCommentRepo) GetCommentsByBoardID(ctx context.Context, boardID string) ([]models.BoardComment, error) {
+	r.storage.mu.RLock()
+	defer r.storage.mu.RUnlock()
+
+	var roots []models.BoardComment
+	repliesMap := make(map[string][]models.BoardComment)
+
+	for _, c := range r.storage.comments {
+		if c.BoardID != boardID {
+			continue
+		}
+		item := *c
+		if u, ok := r.storage.users[c.UserID]; ok {
+			item.UserName = u.DisplayName
+			item.UserAvatarColor = u.AvatarColor
+		}
+
+		if c.ParentID == nil || *c.ParentID == "" {
+			roots = append(roots, item)
+		} else {
+			repliesMap[*c.ParentID] = append(repliesMap[*c.ParentID], item)
+		}
+	}
+
+	// Attach replies and sort
+	for i := range roots {
+		if replies, ok := repliesMap[roots[i].ID]; ok {
+			sort.Slice(replies, func(a, b int) bool {
+				return replies[a].CreatedAt.Before(replies[b].CreatedAt)
+			})
+			roots[i].Replies = replies
+		}
+	}
+
+	sort.Slice(roots, func(i, j int) bool {
+		return roots[i].CreatedAt.Before(roots[j].CreatedAt)
+	})
+
+	return roots, nil
+}
+
+func (r *memoryCommentRepo) GetCommentByID(ctx context.Context, id string) (*models.BoardComment, error) {
+	r.storage.mu.RLock()
+	defer r.storage.mu.RUnlock()
+
+	c, exists := r.storage.comments[id]
+	if !exists {
+		return nil, ErrNotFound
+	}
+	item := *c
+	if u, ok := r.storage.users[c.UserID]; ok {
+		item.UserName = u.DisplayName
+		item.UserAvatarColor = u.AvatarColor
+	}
+	return &item, nil
+}
+
+func (r *memoryCommentRepo) UpdateComment(ctx context.Context, comment *models.BoardComment) error {
+	r.storage.mu.Lock()
+	defer r.storage.mu.Unlock()
+
+	c, exists := r.storage.comments[comment.ID]
+	if !exists {
+		return ErrNotFound
+	}
+
+	c.Content = comment.Content
+	c.Resolved = comment.Resolved
+	c.ResolvedBy = comment.ResolvedBy
+	c.ResolvedAt = comment.ResolvedAt
+	c.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+func (r *memoryCommentRepo) DeleteComment(ctx context.Context, id string) error {
+	r.storage.mu.Lock()
+	defer r.storage.mu.Unlock()
+
+	if _, exists := r.storage.comments[id]; !exists {
+		return ErrNotFound
+	}
+	delete(r.storage.comments, id)
+
+	// Delete replies
+	for cid, c := range r.storage.comments {
+		if c.ParentID != nil && *c.ParentID == id {
+			delete(r.storage.comments, cid)
+		}
+	}
+	return nil
+}
+
+// ==========================================
+// Memory Activity Repository
+// ==========================================
+
+type memoryActivityRepo struct {
+	storage *MemoryStorage
+}
+
+func (r *memoryActivityRepo) LogActivity(ctx context.Context, activity *models.BoardActivity) error {
+	r.storage.mu.Lock()
+	defer r.storage.mu.Unlock()
+
+	r.storage.activitySeq++
+	activity.ID = r.storage.activitySeq
+	if activity.CreatedAt.IsZero() {
+		activity.CreatedAt = time.Now().UTC()
+	}
+
+	if u, ok := r.storage.users[activity.UserID]; ok {
+		activity.UserName = u.DisplayName
+		activity.UserAvatarColor = u.AvatarColor
+	}
+
+	copyA := *activity
+	r.storage.activities[activity.BoardID] = append(r.storage.activities[activity.BoardID], &copyA)
+	return nil
+}
+
+func (r *memoryActivityRepo) GetActivitiesByBoardID(ctx context.Context, boardID string, limit, offset int) ([]models.BoardActivity, error) {
+	r.storage.mu.RLock()
+	defer r.storage.mu.RUnlock()
+
+	list := r.storage.activities[boardID]
+	var result []models.BoardActivity
+
+	for _, a := range list {
+		item := *a
+		if u, ok := r.storage.users[a.UserID]; ok {
+			item.UserName = u.DisplayName
+			item.UserAvatarColor = u.AvatarColor
+		}
+		result = append(result, item)
+	}
+
+	// Reverse chronological order
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+
+	if offset >= len(result) {
+		return []models.BoardActivity{}, nil
+	}
+
+	end := offset + limit
+	if limit <= 0 || end > len(result) {
+		end = len(result)
+	}
+
+	return result[offset:end], nil
+}
+
+// ==========================================
+// Memory Favorite Repository
+// ==========================================
+
+type memoryFavoriteRepo struct {
+	storage *MemoryStorage
+}
+
+func (r *memoryFavoriteRepo) AddFavorite(ctx context.Context, userID, boardID string) error {
+	r.storage.mu.Lock()
+	defer r.storage.mu.Unlock()
+
+	key := userID + ":" + boardID
+	r.storage.favorites[key] = true
+	return nil
+}
+
+func (r *memoryFavoriteRepo) RemoveFavorite(ctx context.Context, userID, boardID string) error {
+	r.storage.mu.Lock()
+	defer r.storage.mu.Unlock()
+
+	key := userID + ":" + boardID
+	delete(r.storage.favorites, key)
+	return nil
+}
+
+func (r *memoryFavoriteRepo) IsFavorite(ctx context.Context, userID, boardID string) (bool, error) {
+	r.storage.mu.RLock()
+	defer r.storage.mu.RUnlock()
+
+	key := userID + ":" + boardID
+	return r.storage.favorites[key], nil
+}
+
+func (r *memoryFavoriteRepo) GetUserFavoriteBoardIDs(ctx context.Context, userID string) ([]string, error) {
+	r.storage.mu.RLock()
+	defer r.storage.mu.RUnlock()
+
+	var ids []string
+	prefix := userID + ":"
+	for key := range r.storage.favorites {
+		if strings.HasPrefix(key, prefix) {
+			boardID := strings.TrimPrefix(key, prefix)
+			ids = append(ids, boardID)
+		}
+	}
+	return ids, nil
 }

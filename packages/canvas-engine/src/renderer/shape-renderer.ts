@@ -8,7 +8,6 @@ import {
   CanvasObject,
   EllipseObject,
   FrameObject,
-  GroupObject,
   LineObject,
   RectangleObject,
   STICKY_COLOR_MAP,
