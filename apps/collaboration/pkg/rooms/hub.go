@@ -3,6 +3,7 @@ package rooms
 import (
 	"sync"
 
+	"alignify/collaboration/pkg/models"
 	"alignify/collaboration/pkg/storage"
 )
 
@@ -96,4 +97,26 @@ func (h *Hub) ActiveClientsCount() int {
 		total += room.ClientCount()
 	}
 	return total
+}
+
+// UpdateUserRoleInBoard updates user's role if they are connected to the specified board room.
+func (h *Hub) UpdateUserRoleInBoard(boardID, userID string, newRole models.Role) {
+	h.mu.RLock()
+	room, exists := h.rooms[boardID]
+	h.mu.RUnlock()
+
+	if exists && room != nil {
+		room.UpdateUserRole(userID, newRole)
+	}
+}
+
+// DisconnectUserFromBoard disconnects a user from a specific board room.
+func (h *Hub) DisconnectUserFromBoard(boardID, userID string, reason string) {
+	h.mu.RLock()
+	room, exists := h.rooms[boardID]
+	h.mu.RUnlock()
+
+	if exists && room != nil {
+		room.DisconnectUser(userID, reason)
+	}
 }
