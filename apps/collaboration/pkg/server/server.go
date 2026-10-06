@@ -376,6 +376,54 @@ func (s *Server) handleBoardsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 11. /api/boards/:boardId/ai/generate
+	if len(parts) == 3 && parts[1] == "ai" && parts[2] == "generate" {
+		s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+			s.aiHdlr.Generate(w, r, boardID)
+		})(w, r)
+		return
+	}
+
+	// 12. /api/boards/:boardId/ai/modify
+	if len(parts) == 3 && parts[1] == "ai" && parts[2] == "modify" {
+		s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+			s.aiHdlr.Modify(w, r, boardID)
+		})(w, r)
+		return
+	}
+
+	// 13. /api/boards/:boardId/ai/analyze
+	if len(parts) == 3 && parts[1] == "ai" && parts[2] == "analyze" {
+		s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.aiHdlr.Analyze(w, r, boardID)
+		})).ServeHTTP(w, r)
+		return
+	}
+
+	// 14. /api/boards/:boardId/ai/explain
+	if len(parts) == 3 && parts[1] == "ai" && parts[2] == "explain" {
+		s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.aiHdlr.Explain(w, r, boardID)
+		})).ServeHTTP(w, r)
+		return
+	}
+
+	// 15. /api/boards/:boardId/ai/mermaid/export
+	if len(parts) == 4 && parts[1] == "ai" && parts[2] == "mermaid" && parts[3] == "export" {
+		s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.aiHdlr.ExportMermaid(w, r, boardID)
+		})).ServeHTTP(w, r)
+		return
+	}
+
+	// 16. /api/boards/:boardId/ai/mermaid/import
+	if len(parts) == 4 && parts[1] == "ai" && parts[2] == "mermaid" && parts[3] == "import" {
+		s.authMw.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+			s.aiHdlr.ImportMermaid(w, r, boardID)
+		})(w, r)
+		return
+	}
+
 	handlers.WriteError(w, http.StatusNotFound, "Resource not found")
 }
 
