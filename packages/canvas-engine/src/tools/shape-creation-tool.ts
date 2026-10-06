@@ -206,6 +206,13 @@ export class ShapeCreationTool implements ITool {
           x2: pos.x + 80,
           y2: pos.y
         });
+      case 'frame':
+        return ObjectFactory.createFrame({
+          x: pos.x - 200,
+          y: pos.y - 150,
+          width: 400,
+          height: 300
+        });
       default:
         return ObjectFactory.createRectangle({ x: pos.x, y: pos.y });
     }

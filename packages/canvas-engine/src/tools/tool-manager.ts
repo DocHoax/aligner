@@ -58,7 +58,7 @@ export class ToolManager {
       this.setTool('select');
     };
 
-    const shapeTypes: ToolType[] = ['rectangle', 'ellipse', 'line', 'arrow', 'text', 'sticky'];
+    const shapeTypes: ToolType[] = ['rectangle', 'ellipse', 'line', 'arrow', 'text', 'sticky', 'frame'];
     for (const type of shapeTypes) {
       this.tools.set(
         type,
