@@ -173,6 +173,7 @@ export type ServerMessageType =
 export interface JoinedPayload {
   userId: string;
   boardId: string;
+  role?: 'owner' | 'editor' | 'viewer';
   users: UserPresence[];
   snapshot: CanvasObject[];
   seq: number;

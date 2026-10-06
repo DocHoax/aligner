@@ -358,6 +358,28 @@ export class CollaborationService implements OnDestroy {
     const user = this.currentUser();
     const token = this.authService.token();
 
+    this.connectionStatus.set(this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING');
+
+    if (token) {
+      this.authService.getWsTicket(this.roomId()).subscribe({
+        next: (res) => {
+          if (res && res.ticket) {
+            const ticketUrl = `${this.wsUrl}?ticket=${encodeURIComponent(res.ticket)}&boardId=${encodeURIComponent(this.roomId())}`;
+            this.openWebSocket(ticketUrl, user);
+          } else {
+            this.connectWithLegacyParams(user, token);
+          }
+        },
+        error: () => {
+          this.connectWithLegacyParams(user, token);
+        }
+      });
+    } else {
+      this.connectWithLegacyParams(user, null);
+    }
+  }
+
+  private connectWithLegacyParams(user: UserPresence, token: string | null): void {
     const queryParams: Record<string, string> = {
       boardId: this.roomId(),
       userId: user.userId,
@@ -370,9 +392,11 @@ export class CollaborationService implements OnDestroy {
     }
 
     const qs = new URLSearchParams(queryParams).toString();
-    const fullUrl = `${this.wsUrl}?${qs}`;
+    this.openWebSocket(`${this.wsUrl}?${qs}`, user);
+  }
 
-    this.connectionStatus.set(this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING');
+  private openWebSocket(fullUrl: string, user: UserPresence): void {
+    if (this.isIntentionallyDisconnected) return;
 
     try {
       this.ws = new WebSocket(fullUrl);
@@ -496,6 +520,10 @@ export class CollaborationService implements OnDestroy {
           const payload = message.payload as JoinedPayload;
           this.lastSyncedSeq.set(payload.seq || 0);
 
+          if (payload.role) {
+            this.userRole.set(payload.role);
+          }
+
           // Filter out our local user from collaborator list
           const localId = this.currentUser().userId;
           const others = (payload.users || []).filter((u) => u.userId !== localId);
@@ -600,7 +628,22 @@ export class CollaborationService implements OnDestroy {
         }
 
         case 'error': {
-          console.warn('[CollaborationService] Server error:', message.payload);
+          const payload = message.payload as { code?: string; message?: string };
+          console.warn('[CollaborationService] Server error:', payload);
+
+          if (payload?.code === 'ROLE_CHANGED' || payload?.code === 'INSUFFICIENT_PERMISSIONS') {
+            this.userRole.set('viewer');
+          } else if (payload?.code === 'SESSION_REVOKED') {
+            this.userRole.set('viewer');
+            this.isIntentionallyDisconnected = true;
+            this.connectionStatus.set('DISCONNECTED');
+            if (this.ws) {
+              try {
+                this.ws.close();
+              } catch {}
+              this.ws = null;
+            }
+          }
           break;
         }
       }

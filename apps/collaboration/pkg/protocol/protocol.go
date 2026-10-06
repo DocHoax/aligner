@@ -133,6 +133,7 @@ type SyncRequestPayload struct {
 type JoinedPayload struct {
 	UserID   string                   `json:"userId"`
 	BoardID  string                   `json:"boardId"`
+	Role     string                   `json:"role,omitempty"`
 	Users    []UserPresence           `json:"users"`
 	Snapshot []map[string]interface{} `json:"snapshot"`
 	Seq      int64                    `json:"seq"`

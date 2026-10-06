@@ -189,6 +189,7 @@ func (r *Room) handleRegister(c *client.Client) {
 	joinedMsg := protocol.JoinedPayload{
 		UserID:   c.UserID,
 		BoardID:  r.BoardID,
+		Role:     string(c.GetRole()),
 		Users:    allUsers,
 		Snapshot: snapshotObjects,
 		Seq:      currentSeq,
