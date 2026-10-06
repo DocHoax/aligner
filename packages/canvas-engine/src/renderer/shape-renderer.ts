@@ -7,6 +7,8 @@ import {
   ArrowObject,
   CanvasObject,
   EllipseObject,
+  FrameObject,
+  GroupObject,
   LineObject,
   RectangleObject,
   STICKY_COLOR_MAP,
@@ -40,6 +42,12 @@ export class ShapeRenderer {
         break;
       case 'arrow':
         this.renderArrow(ctx, obj);
+        break;
+      case 'frame':
+        this.renderFrame(ctx, obj);
+        break;
+      case 'group':
+        // Groups are logical containers whose children are rendered individually in z-order
         break;
     }
 
