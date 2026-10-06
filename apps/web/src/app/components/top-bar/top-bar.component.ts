@@ -1,10 +1,11 @@
-import { Component, ElementRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, ElementRef, ViewChild, inject, signal, output, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.service';
 import { AuthService } from '../../services/auth.service';
 import { BoardService } from '../../services/board.service';
+import { CommentService } from '../../services/comment.service';
 
 const AVAILABLE_COLORS = [
   '#3b82f6', // Blue
@@ -23,13 +24,13 @@ const AVAILABLE_COLORS = [
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
-    <header class="h-12 bg-canvas-panel/95 backdrop-blur-md border-b border-canvas-border px-3 flex items-center justify-between z-30 select-none">
-      <!-- Left: Navigation, Logo, File Title & Menu Actions -->
+    <header class="h-12 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-3 flex items-center justify-between z-30 select-none">
+      <!-- Left: Navigation, Brand, Board Rename & File Menu -->
       <div class="flex items-center gap-3">
         <!-- Back to Workspace Link -->
         <a
           routerLink="/workspaces"
-          class="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium text-slate-400 hover:text-white hover:bg-canvas-hover transition"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition"
           title="Back to Dashboard"
         >
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -38,11 +39,11 @@ const AVAILABLE_COLORS = [
           <span class="hidden md:inline">Dashboard</span>
         </a>
 
-        <div class="h-4 w-px bg-canvas-border"></div>
+        <div class="h-4 w-px bg-slate-800"></div>
 
         <!-- Brand / Logo -->
-        <div class="flex items-center gap-2 pr-2 border-r border-canvas-border">
-          <div class="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-md shadow-blue-500/20">
+        <div class="flex items-center gap-2 pr-2 border-r border-slate-800">
+          <div class="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-blue-500 flex items-center justify-center shadow-md shadow-indigo-500/20">
             <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
               <polyline points="2 17 12 22 22 17"></polyline>
@@ -55,12 +56,12 @@ const AVAILABLE_COLORS = [
           <!-- Role Badge -->
           <span
             class="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border"
-            [class.bg-purple-950-60]="boardService.currentBoardRole() === 'owner'"
+            [class.bg-purple-950/60]="boardService.currentBoardRole() === 'owner'"
             [class.text-purple-400]="boardService.currentBoardRole() === 'owner'"
-            [class.border-purple-800-40]="boardService.currentBoardRole() === 'owner'"
-            [class.bg-blue-950-60]="boardService.currentBoardRole() === 'editor'"
+            [class.border-purple-800/40]="boardService.currentBoardRole() === 'owner'"
+            [class.bg-blue-950/60]="boardService.currentBoardRole() === 'editor'"
             [class.text-blue-400]="boardService.currentBoardRole() === 'editor'"
-            [class.border-blue-800-40]="boardService.currentBoardRole() === 'editor'"
+            [class.border-blue-800/40]="boardService.currentBoardRole() === 'editor'"
             [class.bg-slate-800]="boardService.currentBoardRole() === 'viewer'"
             [class.text-slate-400]="boardService.currentBoardRole() === 'viewer'"
             [class.border-slate-700]="boardService.currentBoardRole() === 'viewer'"
@@ -74,7 +75,7 @@ const AVAILABLE_COLORS = [
           @if (!isEditingTitle()) {
             <button
               (click)="startEditTitle()"
-              class="px-2 py-1 rounded text-xs font-medium text-slate-200 hover:bg-canvas-hover hover:text-white transition flex items-center gap-1.5 max-w-[200px] truncate"
+              class="px-2 py-1 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800 hover:text-white transition flex items-center gap-1.5 max-w-[200px] truncate"
               title="Click to rename board"
             >
               <span class="truncate">{{ boardService.currentBoard()?.name || bridge.documentMeta().name }}</span>
@@ -93,7 +94,7 @@ const AVAILABLE_COLORS = [
               (blur)="commitEditTitle()"
               (keydown.enter)="commitEditTitle()"
               (keydown.escape)="cancelEditTitle()"
-              class="px-2 py-0.5 rounded text-xs bg-canvas-elevated border border-blue-500 text-white focus:outline-none w-[180px]"
+              class="px-2 py-0.5 rounded text-xs bg-slate-950 border border-indigo-500 text-white focus:outline-none w-[180px]"
             />
           }
         </div>
@@ -110,17 +111,17 @@ const AVAILABLE_COLORS = [
 
         <!-- Document File Actions -->
         @if (boardService.currentBoardRole() !== 'viewer') {
-          <div class="hidden lg:flex items-center gap-1 pl-2 border-l border-canvas-border">
+          <div class="hidden xl:flex items-center gap-1 pl-2 border-l border-slate-800">
             <button
               (click)="bridge.newDocument()"
-              class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition"
+              class="px-2.5 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
             >
               New
             </button>
 
             <button
               (click)="fileInput.click()"
-              class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition"
+              class="px-2.5 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
             >
               Open JSON
             </button>
@@ -134,7 +135,7 @@ const AVAILABLE_COLORS = [
 
             <button
               (click)="bridge.saveDocument()"
-              class="px-2.5 py-1 text-xs font-medium rounded text-slate-400 hover:text-slate-100 hover:bg-canvas-hover transition flex items-center gap-1"
+              class="px-2.5 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition flex items-center gap-1"
             >
               <span>Save</span>
             </button>
@@ -142,16 +143,16 @@ const AVAILABLE_COLORS = [
         }
       </div>
 
-      <!-- Center: Undo/Redo & Real-Time Room Pill -->
+      <!-- Center: Undo/Redo & Quick Tools / Command Palette -->
       <div class="flex items-center gap-2">
         <!-- Undo / Redo controls -->
         @if (boardService.currentBoardRole() !== 'viewer') {
-          <div class="flex items-center gap-0.5 bg-canvas-panel border border-canvas-border rounded-lg p-0.5 shadow-sm">
+          <div class="flex items-center gap-0.5 bg-slate-950/60 border border-slate-800 rounded-lg p-0.5 shadow-sm">
             <button
               (click)="bridge.undo()"
               [disabled]="!bridge.canUndo()"
-              class="p-1.5 rounded text-slate-300 hover:text-white hover:bg-canvas-hover disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition"
-              data-tooltip="Undo (Ctrl+Z)"
+              class="p-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition"
+              title="Undo (Ctrl+Z)"
             >
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="1 4 1 10 7 10"></polyline>
@@ -162,8 +163,8 @@ const AVAILABLE_COLORS = [
             <button
               (click)="bridge.redo()"
               [disabled]="!bridge.canRedo()"
-              class="p-1.5 rounded text-slate-300 hover:text-white hover:bg-canvas-hover disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition"
-              data-tooltip="Redo (Ctrl+Y)"
+              class="p-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition"
+              title="Redo (Ctrl+Y)"
             >
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="23 4 23 10 17 10"></polyline>
@@ -173,70 +174,90 @@ const AVAILABLE_COLORS = [
           </div>
         }
 
-        <!-- Room Switcher & Share Link -->
-        <div class="relative flex items-center bg-canvas-panel border border-canvas-border rounded-lg px-2 py-1 text-xs text-slate-300 gap-2">
-          <div class="flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="7" height="7"></rect>
-              <rect x="14" y="3" width="7" height="7"></rect>
-              <rect x="14" y="14" width="7" height="7"></rect>
-              <rect x="3" y="14" width="7" height="7"></rect>
-            </svg>
-            <span class="font-mono text-[11px] text-slate-200">#{{ bridge.collaboration.roomId() }}</span>
-          </div>
+        <!-- Command Palette Trigger Button -->
+        <button
+          (click)="toggleCommandPalette.emit()"
+          class="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-950/60 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 transition text-xs shadow-sm"
+          title="Search actions and commands (Ctrl+K)"
+        >
+          <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <span class="text-[11px]">Command Palette</span>
+          <kbd class="px-1.5 py-0.2 bg-slate-800 text-slate-400 rounded text-[10px] font-mono border border-slate-700">Ctrl+K</kbd>
+        </button>
 
-          <button
-            (click)="copyShareLink()"
-            class="px-1.5 py-0.5 rounded bg-canvas-elevated hover:bg-canvas-hover text-slate-300 hover:text-white border border-canvas-border transition flex items-center gap-1 text-[11px]"
-            title="Copy board invite link"
-          >
-            @if (copiedInvite()) {
-              <svg class="w-3 h-3 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span class="text-emerald-400">Copied!</span>
-            } @else {
-              <svg class="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-              <span>Share</span>
-            }
-          </button>
+        <!-- Room Indicator -->
+        <div class="relative hidden md:flex items-center bg-slate-950/60 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-300 gap-1.5">
+          <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          <span class="font-mono text-[11px] text-slate-200">#{{ bridge.collaboration.roomId() }}</span>
         </div>
       </div>
 
-      <!-- Right: Connection Status, Collaborator Stack, User Profile, Zoom & Export -->
-      <div class="flex items-center gap-2.5">
-        <!-- Live Connection Status Pill -->
-        <div
-          class="flex items-center gap-1.5 px-2 py-1 rounded-full border text-[11px] font-medium"
-          [ngClass]="{
-            'bg-emerald-950/40 border-emerald-800/40 text-emerald-400': bridge.collaboration.connectionStatus() === 'CONNECTED',
-            'bg-amber-950/40 border-amber-800/40 text-amber-400': bridge.collaboration.connectionStatus() === 'RECONNECTING' || bridge.collaboration.connectionStatus() === 'CONNECTING',
-            'bg-rose-950/40 border-rose-800/40 text-rose-400': bridge.collaboration.connectionStatus() === 'DISCONNECTED' || bridge.collaboration.connectionStatus() === 'ERROR'
-          }"
-          [title]="'WebSocket Status: ' + bridge.collaboration.connectionStatus() + (bridge.collaboration.latencyMs() ? ' (' + bridge.collaboration.latencyMs() + 'ms)' : '')"
-        >
-          <span
-            class="w-2 h-2 rounded-full"
-            [ngClass]="{
-              'bg-emerald-400 animate-pulse': bridge.collaboration.connectionStatus() === 'CONNECTED',
-              'bg-amber-400 animate-ping': bridge.collaboration.connectionStatus() === 'RECONNECTING' || bridge.collaboration.connectionStatus() === 'CONNECTING',
-              'bg-rose-400': bridge.collaboration.connectionStatus() === 'DISCONNECTED' || bridge.collaboration.connectionStatus() === 'ERROR'
-            }"
-          ></span>
-          <span class="capitalize">{{ bridge.collaboration.connectionStatus().toLowerCase() }}</span>
-          @if (bridge.collaboration.latencyMs() > 0 && bridge.collaboration.isConnected()) {
-            <span class="text-[10px] opacity-75 font-mono">{{ bridge.collaboration.latencyMs() }}ms</span>
-          }
+      <!-- Right: Drawers (Layers, Comments, Activity, History), Collaborators, Share, Export, Profile -->
+      <div class="flex items-center gap-2">
+        <!-- Feature Drawer Toggles Group -->
+        <div class="flex items-center bg-slate-950/60 border border-slate-800 rounded-lg p-0.5 gap-0.5">
+          <!-- Layers Toggle -->
+          <button
+            (click)="toggleLayers.emit()"
+            class="p-1.5 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
+            title="Layers & Hierarchy"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </button>
+
+          <!-- Comments Toggle -->
+          <button
+            (click)="toggleComments.emit()"
+            class="relative p-1.5 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
+            title="Comments & Discussion"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            @if (commentService.comments().length > 0) {
+              <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-indigo-600 text-white text-[9px] font-bold flex items-center justify-center">
+                {{ commentService.comments().length }}
+              </span>
+            }
+          </button>
+
+          <!-- Activity Feed Toggle -->
+          <button
+            (click)="toggleActivity.emit()"
+            class="p-1.5 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
+            title="Activity Audit Log"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+
+          <!-- Version History Toggle -->
+          <button
+            (click)="toggleVersionHistory.emit()"
+            class="p-1.5 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
+            title="Version History Snapshots"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
         </div>
 
         <!-- Collaborators Avatar Stack -->
-        <div class="flex items-center -space-x-1.5 overflow-hidden pl-1">
+        <div class="hidden sm:flex items-center -space-x-1.5 overflow-hidden pl-1">
           @for (user of bridge.collaboration.collaborators().slice(0, 4); track user.userId) {
             <div
-              class="w-6 h-6 rounded-full border-2 border-canvas-bg flex items-center justify-center text-[10px] font-bold text-white shadow-sm transition hover:scale-110 hover:z-10 cursor-pointer"
+              class="w-6 h-6 rounded-full border-2 border-slate-900 flex items-center justify-center text-[10px] font-bold text-white shadow-sm transition hover:scale-110 hover:z-10 cursor-pointer"
               [style.backgroundColor]="user.userColor"
               [title]="user.userName + ' (Online)'"
             >
@@ -246,10 +267,81 @@ const AVAILABLE_COLORS = [
 
           @if (bridge.collaboration.collaborators().length > 4) {
             <div
-              class="w-6 h-6 rounded-full border-2 border-canvas-bg bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-200"
+              class="w-6 h-6 rounded-full border-2 border-slate-900 bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-200"
               [title]="bridge.collaboration.collaborators().length - 4 + ' more collaborators'"
             >
               +{{ bridge.collaboration.collaborators().length - 4 }}
+            </div>
+          }
+        </div>
+
+        <!-- Share Button -->
+        <button
+          (click)="toggleShare.emit()"
+          class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+          title="Share Board & Manage Collaborators"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+          </svg>
+          <span class="hidden md:inline">Share</span>
+        </button>
+
+        <!-- Shortcuts Modal Trigger -->
+        <button
+          (click)="toggleShortcuts.emit()"
+          class="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition"
+          title="Keyboard Shortcuts (?)"
+        >
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+
+        <!-- Export Dropdown -->
+        <div class="relative">
+          <button
+            (click)="toggleExportMenu()"
+            class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium border border-slate-700 transition flex items-center gap-1.5"
+          >
+            <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span class="hidden lg:inline">Export</span>
+            <svg class="w-3 h-3 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+
+          <!-- Export Popover Menu -->
+          @if (isExportMenuOpen()) {
+            <div
+              (click)="$event.stopPropagation()"
+              class="absolute right-0 mt-1 w-44 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100"
+            >
+              <button
+                (click)="exportPNG()"
+                class="w-full px-3 py-2 text-left text-xs font-medium text-slate-200 hover:bg-slate-800 flex items-center justify-between"
+              >
+                <span>Export PNG (HiDPI)</span>
+                <span class="text-[10px] text-slate-500 font-mono">.png</span>
+              </button>
+              <button
+                (click)="exportSVG()"
+                class="w-full px-3 py-2 text-left text-xs font-medium text-slate-200 hover:bg-slate-800 flex items-center justify-between"
+              >
+                <span>Export Vector SVG</span>
+                <span class="text-[10px] text-slate-500 font-mono">.svg</span>
+              </button>
+              <button
+                (click)="exportJSON()"
+                class="w-full px-3 py-2 text-left text-xs font-medium text-slate-200 hover:bg-slate-800 flex items-center justify-between border-t border-slate-800 mt-1 pt-1.5"
+              >
+                <span>Export Project JSON</span>
+                <span class="text-[10px] text-slate-500 font-mono">.json</span>
+              </button>
             </div>
           }
         </div>
@@ -258,25 +350,22 @@ const AVAILABLE_COLORS = [
         <div class="relative">
           <button
             (click)="toggleProfilePopover()"
-            class="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-canvas-hover border border-canvas-border transition"
+            class="flex items-center gap-1.5 p-1 rounded-lg hover:bg-slate-800 border border-slate-800 transition"
             title="User Profile & Settings"
           >
             <div
-              class="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-inner"
+              class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-inner"
               [style.backgroundColor]="bridge.collaboration.currentUser().userColor"
             >
               {{ getInitials(bridge.collaboration.currentUser().userName) }}
             </div>
-            <span class="text-xs font-medium text-slate-200 max-w-[90px] truncate">
-              {{ bridge.collaboration.currentUser().userName }}
-            </span>
           </button>
 
           <!-- Profile Editor Popover -->
           @if (isProfileOpen()) {
             <div
               (click)="$event.stopPropagation()"
-              class="absolute right-0 top-full mt-1.5 w-60 bg-canvas-panel border border-canvas-border rounded-lg shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-100 text-xs"
+              class="absolute right-0 top-full mt-1.5 w-60 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-100 text-xs"
             >
               <div class="font-semibold text-slate-200 mb-2">Collaborator Profile</div>
 
@@ -287,7 +376,7 @@ const AVAILABLE_COLORS = [
                 (ngModelChange)="userNameInput.set($event)"
                 (blur)="saveUserName()"
                 (keydown.enter)="saveUserName()"
-                class="w-full px-2 py-1 rounded bg-canvas-elevated border border-canvas-border text-white text-xs focus:outline-none focus:border-blue-500 mb-3"
+                class="w-full px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-indigo-500 mb-3"
               />
 
               <label class="block text-[11px] text-slate-400 mb-1.5">Avatar & Cursor Color</label>
@@ -309,7 +398,7 @@ const AVAILABLE_COLORS = [
                 }
               </div>
 
-              <div class="border-t border-canvas-border pt-2 flex justify-between items-center">
+              <div class="border-t border-slate-800 pt-2 flex justify-between items-center">
                 <a
                   routerLink="/workspaces"
                   class="text-[11px] text-slate-400 hover:text-white"
@@ -326,118 +415,28 @@ const AVAILABLE_COLORS = [
             </div>
           }
         </div>
-
-        <!-- Zoom Controls -->
-        <div class="hidden sm:flex items-center bg-canvas-panel border border-canvas-border rounded-lg p-0.5 text-xs font-medium">
-          <button
-            (click)="bridge.zoomOut()"
-            class="p-1.5 rounded hover:bg-canvas-hover text-slate-400 hover:text-slate-100 transition"
-            title="Zoom Out"
-          >
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          </button>
-
-          <button
-            (click)="bridge.resetZoom()"
-            class="px-2 py-0.5 text-slate-200 hover:text-white hover:bg-canvas-hover rounded transition tabular-nums w-12 text-center"
-            title="Reset Zoom (100%)"
-          >
-            {{ bridge.zoom() }}%
-          </button>
-
-          <button
-            (click)="bridge.zoomIn()"
-            class="p-1.5 rounded hover:bg-canvas-hover text-slate-400 hover:text-slate-100 transition"
-            title="Zoom In"
-          >
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          </button>
-
-          <button
-            (click)="bridge.fitToContent()"
-            class="p-1.5 ml-0.5 border-l border-canvas-border rounded hover:bg-canvas-hover text-slate-400 hover:text-slate-100 transition"
-            title="Fit to Content (Overview)"
-          >
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M15 3h6v6"></path>
-              <path d="M9 21H3v-6"></path>
-              <path d="M21 3l-7 7"></path>
-              <path d="M3 21l7-7"></path>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Export Dropdown -->
-        <div class="relative">
-          <button
-            (click)="toggleExportMenu()"
-            class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
-          >
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            <span>Export</span>
-            <svg class="w-3 h-3 ml-0.5 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </button>
-
-          <!-- Export Popover Menu -->
-          @if (isExportMenuOpen()) {
-            <div
-              (click)="$event.stopPropagation()"
-              class="absolute right-0 mt-1 w-44 bg-canvas-panel border border-canvas-border rounded-lg shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100"
-            >
-              <button
-                (click)="exportPNG()"
-                class="w-full px-3 py-2 text-left text-xs font-medium text-slate-200 hover:bg-canvas-hover flex items-center justify-between"
-              >
-                <span>Export PNG (HiDPI)</span>
-                <span class="text-[10px] text-slate-500 font-mono">.png</span>
-              </button>
-              <button
-                (click)="exportSVG()"
-                class="w-full px-3 py-2 text-left text-xs font-medium text-slate-200 hover:bg-canvas-hover flex items-center justify-between"
-              >
-                <span>Export Vector SVG</span>
-                <span class="text-[10px] text-slate-500 font-mono">.svg</span>
-              </button>
-              <button
-                (click)="exportJSON()"
-                class="w-full px-3 py-2 text-left text-xs font-medium text-slate-200 hover:bg-canvas-hover flex items-center justify-between border-t border-canvas-border mt-1 pt-1.5"
-              >
-                <span>Export Project JSON</span>
-                <span class="text-[10px] text-slate-500 font-mono">.json</span>
-              </button>
-            </div>
-          }
-        </div>
       </div>
     </header>
-  `,
-  styles: []
+  `
 })
 export class TopBarComponent {
   readonly bridge = inject(CanvasEngineBridgeService);
   readonly authService = inject(AuthService);
   readonly boardService = inject(BoardService);
+  readonly commentService = inject(CommentService);
   readonly availableColors = AVAILABLE_COLORS;
+
+  readonly toggleLayers = output<void>();
+  readonly toggleComments = output<void>();
+  readonly toggleActivity = output<void>();
+  readonly toggleVersionHistory = output<void>();
+  readonly toggleShare = output<void>();
+  readonly toggleShortcuts = output<void>();
+  readonly toggleCommandPalette = output<void>();
 
   readonly isEditingTitle = signal(false);
   readonly titleValue = signal('');
   readonly isExportMenuOpen = signal(false);
-
-  readonly isRoomModalOpen = signal(false);
-  readonly newRoomInput = signal('');
-  readonly copiedInvite = signal(false);
-
   readonly isProfileOpen = signal(false);
   readonly userNameInput = signal(this.bridge.collaboration.currentUser().userName);
 
@@ -473,40 +472,12 @@ export class TopBarComponent {
   toggleExportMenu(): void {
     this.isExportMenuOpen.update((v) => !v);
     this.isProfileOpen.set(false);
-    this.isRoomModalOpen.set(false);
   }
 
   toggleProfilePopover(): void {
     this.userNameInput.set(this.bridge.collaboration.currentUser().userName);
     this.isProfileOpen.update((v) => !v);
     this.isExportMenuOpen.set(false);
-    this.isRoomModalOpen.set(false);
-  }
-
-  toggleRoomModal(): void {
-    this.newRoomInput.set(this.bridge.collaboration.roomId());
-    this.isRoomModalOpen.update((v) => !v);
-    this.isProfileOpen.set(false);
-    this.isExportMenuOpen.set(false);
-  }
-
-  applyNewRoom(): void {
-    const trimmed = this.newRoomInput().trim();
-    if (trimmed) {
-      this.bridge.collaboration.setRoom(trimmed);
-      this.isRoomModalOpen.set(false);
-    }
-  }
-
-  async copyShareLink(): Promise<void> {
-    const link = this.bridge.collaboration.getShareableLink();
-    try {
-      await navigator.clipboard.writeText(link);
-      this.copiedInvite.set(true);
-      setTimeout(() => this.copiedInvite.set(false), 2500);
-    } catch {
-      // Fallback
-    }
   }
 
   saveUserName(): void {
