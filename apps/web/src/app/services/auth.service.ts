@@ -102,6 +102,14 @@ export class AuthService {
       );
   }
 
+  getWsTicket(boardId?: string): Observable<{ success: boolean; ticket: string; expiresAt: string }> {
+    return this.http.post<{ success: boolean; ticket: string; expiresAt: string }>(
+      `${this.apiBase}/ws-ticket`,
+      { boardId: boardId || 'default' },
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
   private handleAuthSuccess(res: AuthResponse): void {
     if (res.token) {
       this.token.set(res.token);
