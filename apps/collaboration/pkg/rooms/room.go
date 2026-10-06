@@ -462,6 +462,15 @@ func (r *Room) ClientCount() int {
 	return len(r.clients)
 }
 
+// GetObjects returns the current snapshot objects from the document store.
+func (r *Room) GetObjects() []map[string]interface{} {
+	if r.docStore == nil {
+		return nil
+	}
+	objs, _ := r.docStore.GetSnapshot()
+	return objs
+}
+
 // Helper function to decode unstructured payload map/struct to concrete target.
 func decodePayload(src interface{}, dest interface{}) error {
 	if src == nil {

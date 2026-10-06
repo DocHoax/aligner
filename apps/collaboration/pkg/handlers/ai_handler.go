@@ -68,6 +68,8 @@ func (h *AIHandler) Generate(w http.ResponseWriter, r *http.Request, boardID str
 		return
 	}
 
+	req.BoardID = boardID
+
 	resp, err := h.provider.GenerateDiagram(r.Context(), req)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "AI generation failed: "+err.Error())
@@ -117,8 +119,9 @@ func (h *AIHandler) Modify(w http.ResponseWriter, r *http.Request, boardID strin
 		return
 	}
 
-	if len(req.CurrentObjects) == 0 {
-		req.CurrentObjects = h.getCurrentBoardObjects(r.Context(), boardID)
+	req.BoardID = boardID
+	if len(req.ExistingObjects) == 0 {
+		req.ExistingObjects = h.getCurrentBoardObjects(r.Context(), boardID)
 	}
 
 	resp, err := h.provider.ModifyDiagram(r.Context(), req)
@@ -128,8 +131,10 @@ func (h *AIHandler) Modify(w http.ResponseWriter, r *http.Request, boardID strin
 	}
 
 	h.logActivity(r.Context(), boardID, userID, "ai_modify", "Applied AI modification: "+req.Prompt, map[string]interface{}{
-		"prompt": req.Prompt,
-		"diff":   resp.Diff,
+		"prompt":        req.Prompt,
+		"addedNodes":    len(resp.AddedNodeIDs),
+		"modifiedNodes": len(resp.ModifiedNodeIDs),
+		"deletedNodes":  len(resp.DeletedNodeIDs),
 	})
 
 	WriteJSON(w, http.StatusOK, resp)
@@ -164,8 +169,9 @@ func (h *AIHandler) Analyze(w http.ResponseWriter, r *http.Request, boardID stri
 	var req ai.AnalyzeRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
-	if len(req.CurrentObjects) == 0 {
-		req.CurrentObjects = h.getCurrentBoardObjects(r.Context(), boardID)
+	req.BoardID = boardID
+	if len(req.Objects) == 0 {
+		req.Objects = h.getCurrentBoardObjects(r.Context(), boardID)
 	}
 
 	resp, err := h.provider.AnalyzeDiagram(r.Context(), req)
@@ -176,8 +182,8 @@ func (h *AIHandler) Analyze(w http.ResponseWriter, r *http.Request, boardID stri
 
 	if userID != "" {
 		h.logActivity(r.Context(), boardID, userID, "ai_analyze", "Ran architecture analysis scan", map[string]interface{}{
-			"healthScore":  resp.HealthScore,
-			"findingCount": len(resp.Findings),
+			"overallScore": resp.Report.OverallScore,
+			"findingCount": len(resp.Report.Findings),
 		})
 	}
 
@@ -213,8 +219,9 @@ func (h *AIHandler) Explain(w http.ResponseWriter, r *http.Request, boardID stri
 	var req ai.ExplainRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
-	if len(req.CurrentObjects) == 0 {
-		req.CurrentObjects = h.getCurrentBoardObjects(r.Context(), boardID)
+	req.BoardID = boardID
+	if len(req.Objects) == 0 {
+		req.Objects = h.getCurrentBoardObjects(r.Context(), boardID)
 	}
 
 	resp, err := h.provider.ExplainDiagram(r.Context(), req)
@@ -336,7 +343,7 @@ func (h *AIHandler) ImportMermaid(w http.ResponseWriter, r *http.Request, boardI
 func (h *AIHandler) getCurrentBoardObjects(ctx context.Context, boardID string) []map[string]interface{} {
 	// First attempt live room memory state
 	if h.hub != nil {
-		if room := h.hub.GetRoom(boardID); room != nil {
+		if room, ok := h.hub.GetRoom(boardID); ok && room != nil {
 			objs := room.GetObjects()
 			if len(objs) > 0 {
 				var result []map[string]interface{}
@@ -372,7 +379,7 @@ func (h *AIHandler) logActivity(ctx context.Context, boardID, userID, actionType
 	userName := "AI User"
 	userAvatar := "#6366f1"
 	if user != nil {
-		userName = user.Name
+		userName = user.DisplayName
 		userAvatar = user.AvatarColor
 	}
 
