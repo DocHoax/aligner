@@ -56,6 +56,7 @@ describe('AiAssistantDialogComponent', () => {
     (component as any).activeTab = signal('generate');
     (component as any).findingCategoryFilter = signal(null);
     (component as any).mermaidCopied = signal(false);
+    (component as any).generateInputRef = () => null;
 
     component.generatePrompt = '';
     component.generateDirection = 'LR';
@@ -81,18 +82,26 @@ describe('AiAssistantDialogComponent', () => {
       expect(component.isOpen()).toBe(false);
     });
 
-    it('should set tab and switch active tab signal', () => {
-      component.setTab('explain');
+    it('should switch active tab', () => {
+      component.activeTab.set('explain');
       expect(component.activeTab()).toBe('explain');
     });
 
     it('should apply prompt presets', () => {
-      component.applyPreset('Build a high-scale e-commerce architecture');
+      component.selectGeneratePreset({
+        label: 'E-commerce',
+        prompt: 'Build a high-scale e-commerce architecture',
+        direction: 'TB'
+      });
       expect(component.generatePrompt).toBe('Build a high-scale e-commerce architecture');
+      expect(component.generateDirection).toBe('TB');
     });
 
     it('should apply modify presets', () => {
-      component.applyModifyPreset('Introduce a Redis cache cluster');
+      component.selectModifyPreset({
+        label: 'Redis Cache',
+        prompt: 'Introduce a Redis cache cluster'
+      });
       expect(component.modifyPrompt).toBe('Introduce a Redis cache cluster');
     });
   });
@@ -202,7 +211,8 @@ describe('AiAssistantDialogComponent', () => {
       component.runExportMermaid();
 
       expect(mockAiService.exportMermaid).toHaveBeenCalledWith('brd_test_1', {
-        objects: []
+        objects: [],
+        direction: 'LR'
       });
     });
 

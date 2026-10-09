@@ -955,7 +955,9 @@ export class AiAssistantDialogComponent implements OnInit {
     this.aiService.clearError();
     if (tab === 'generate') {
       setTimeout(() => {
-        this.generateInputRef()?.nativeElement.focus();
+        if (typeof this.generateInputRef === 'function') {
+          this.generateInputRef()?.nativeElement?.focus();
+        }
       }, 50);
     }
   }
