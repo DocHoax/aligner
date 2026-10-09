@@ -16,7 +16,7 @@ import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.s
 
 export interface CommandItem {
   id: string;
-  category: 'Tools' | 'Canvas' | 'Arrange' | 'Panels' | 'Export' | 'Navigation';
+  category: 'Tools' | 'Canvas' | 'Arrange' | 'Panels' | 'AI Assistant' | 'Export' | 'Navigation';
   label: string;
   description?: string;
   hotkey?: string;
@@ -127,6 +127,7 @@ export class CommandPaletteComponent implements OnInit, OnDestroy {
   readonly toggleShare = output<void>();
   readonly toggleShortcuts = output<void>();
   readonly toggleLayers = output<void>();
+  readonly toggleAiAssistant = output<void>();
 
   @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
@@ -177,6 +178,13 @@ export class CommandPaletteComponent implements OnInit, OnDestroy {
     { id: 'panel-version-history', category: 'Panels', label: 'Toggle Version History', action: () => this.toggleVersionHistory.emit() },
     { id: 'panel-share', category: 'Panels', label: 'Share Board Dialog', action: () => this.toggleShare.emit() },
     { id: 'panel-shortcuts', category: 'Panels', label: 'Keyboard Shortcuts Cheat Sheet', hotkey: '?', action: () => this.toggleShortcuts.emit() },
+
+    // AI Assistant
+    { id: 'ai-generate', category: 'AI Assistant', label: 'AI Architecture Generator', hotkey: 'Ctrl + Shift + A', action: () => this.toggleAiAssistant.emit() },
+    { id: 'ai-modify', category: 'AI Assistant', label: 'AI Refine & Modify Architecture', action: () => this.toggleAiAssistant.emit() },
+    { id: 'ai-analyze', category: 'AI Assistant', label: 'AI Security & SPOF Inspection Scan', action: () => this.toggleAiAssistant.emit() },
+    { id: 'ai-explain', category: 'AI Assistant', label: 'AI Technical Breakdown & Q&A', action: () => this.toggleAiAssistant.emit() },
+    { id: 'ai-mermaid', category: 'AI Assistant', label: 'AI Mermaid Flowchart Import / Export', action: () => this.toggleAiAssistant.emit() },
 
     // Export
     { id: 'export-png', category: 'Export', label: 'Export High-Resolution PNG', action: () => this.bridge.exportPNG() },

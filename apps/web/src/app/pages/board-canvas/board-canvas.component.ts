@@ -24,6 +24,7 @@ import { MinimapComponent } from '../../components/minimap/minimap.component';
 import { ContextMenuComponent } from '../../components/context-menu/context-menu.component';
 import { CommandPaletteComponent } from '../../components/command-palette/command-palette.component';
 import { ShortcutsDialogComponent } from '../../components/shortcuts-dialog/shortcuts-dialog.component';
+import { AiAssistantDialogComponent } from '../../components/ai-assistant-dialog/ai-assistant-dialog.component';
 import { CanvasEngineBridgeService } from '../../services/canvas-engine-bridge.service';
 import { BoardService } from '../../services/board.service';
 
@@ -45,7 +46,8 @@ import { BoardService } from '../../services/board.service';
     MinimapComponent,
     ContextMenuComponent,
     CommandPaletteComponent,
-    ShortcutsDialogComponent
+    ShortcutsDialogComponent,
+    AiAssistantDialogComponent
   ],
   template: `
     <div
@@ -62,6 +64,7 @@ import { BoardService } from '../../services/board.service';
         (toggleShare)="shareDialog?.open()"
         (toggleShortcuts)="shortcutsDialog?.open()"
         (toggleCommandPalette)="commandPalette?.open()"
+        (toggleAiAssistant)="aiAssistantDialog?.open()"
       ></app-top-bar>
 
       <!-- Main Canvas Workspace Area -->
@@ -128,7 +131,8 @@ import { BoardService } from '../../services/board.service';
       <!-- Global Modals -->
       <app-share-dialog #shareDialog [workspaceId]="currentWorkspaceId()"></app-share-dialog>
       <app-shortcuts-dialog #shortcutsDialog></app-shortcuts-dialog>
-      <app-command-palette #commandPalette></app-command-palette>
+      <app-command-palette #commandPalette (toggleAiAssistant)="aiAssistantDialog?.open()"></app-command-palette>
+      <app-ai-assistant-dialog #aiAssistantDialog [boardId]="currentBoardId()"></app-ai-assistant-dialog>
     </div>
   `,
   styles: [
@@ -163,11 +167,19 @@ export class BoardCanvasComponent implements OnInit, OnDestroy {
   @ViewChild('shareDialog') shareDialog?: ShareDialogComponent;
   @ViewChild('shortcutsDialog') shortcutsDialog?: ShortcutsDialogComponent;
   @ViewChild('commandPalette') commandPalette?: CommandPaletteComponent;
+  @ViewChild('aiAssistantDialog') aiAssistantDialog?: AiAssistantDialogComponent;
 
   @HostListener('window:keydown', ['$event'])
   handleGlobalKeydown(e: KeyboardEvent): void {
     const target = e.target as HTMLElement;
     const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+    // AI Assistant: Ctrl+Shift+A or Cmd+Shift+A
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      this.aiAssistantDialog?.open();
+      return;
+    }
 
     // Command palette: Ctrl+K or Cmd+K
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {

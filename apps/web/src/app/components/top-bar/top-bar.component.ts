@@ -183,6 +183,19 @@ const AVAILABLE_COLORS = [
           <kbd class="px-1.5 py-0.2 bg-slate-800 text-slate-400 rounded text-[10px] font-mono border border-slate-700">Ctrl+K</kbd>
         </button>
 
+        <!-- AI Architecture Assistant Button -->
+        <button
+          (click)="toggleAiAssistant.emit()"
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-indigo-600/90 via-purple-600/90 to-pink-600/90 hover:from-indigo-500 hover:to-purple-500 text-white transition text-xs font-semibold shadow-md shadow-indigo-500/20 border border-indigo-400/30"
+          title="Open AI Architecture Assistant (Ctrl+Shift+A)"
+        >
+          <svg class="w-3.5 h-3.5 text-pink-200 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
+          </svg>
+          <span class="text-[11px] tracking-tight">AI Assistant</span>
+          <span class="hidden lg:inline-block px-1 py-0.2 rounded text-[9px] font-mono bg-white/20 text-white font-bold">⌘A</span>
+        </button>
+
         <!-- Room Indicator -->
         <div class="relative hidden md:flex items-center bg-slate-950/60 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-300 gap-1.5">
           <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -429,6 +442,7 @@ export class TopBarComponent {
   readonly toggleShare = output<void>();
   readonly toggleShortcuts = output<void>();
   readonly toggleCommandPalette = output<void>();
+  readonly toggleAiAssistant = output<void>();
 
   readonly isEditingTitle = signal(false);
   readonly titleValue = signal('');
