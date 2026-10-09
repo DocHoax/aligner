@@ -1,4 +1,4 @@
-import { DocumentOperation, Point } from '@alignify/protocol';
+import { DocumentOperation } from '@alignify/protocol';
 
 export type ArchitectureNodeType =
   | 'gateway'

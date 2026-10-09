@@ -4,6 +4,7 @@
  */
 
 import { CanvasObject, Point, Rect } from '@alignify/shared-types';
+export type { Point, Rect, CanvasObject };
 
 // ==========================================
 // 1. Granular Document Operations
