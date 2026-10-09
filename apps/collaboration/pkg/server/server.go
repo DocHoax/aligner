@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -20,34 +19,40 @@ import (
 	"alignify/collaboration/pkg/storage"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024 * 1024,
-	WriteBufferSize: 1024 * 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// Allow all origins for local dev and cross-origin WebSocket connections
-		return true
-	},
-}
-
 // Server provides HTTP routing, REST API controllers, and WebSocket connection dispatching.
 type Server struct {
-	hub           *rooms.Hub
-	store         storage.Storage
-	jwtManager    *auth.JWTManager
-	ticketStore   *auth.TicketStore
-	authHandler   *handlers.AuthHandler
-	workspaceHdlr *handlers.WorkspaceHandler
-	boardHdlr     *handlers.BoardHandler
-	commentHdlr   *handlers.CommentHandler
-	activityHdlr  *handlers.ActivityHandler
-	versionHdlr   *handlers.VersionHandler
-	aiHdlr        *handlers.AIHandler
-	authMw        *auth.AuthMiddleware
-	startTime     time.Time
+	hub            *rooms.Hub
+	store          storage.Storage
+	config         ServerConfig
+	jwtManager     *auth.JWTManager
+	ticketStore    *auth.TicketStore
+	authHandler    *handlers.AuthHandler
+	workspaceHdlr  *handlers.WorkspaceHandler
+	boardHdlr      *handlers.BoardHandler
+	commentHdlr    *handlers.CommentHandler
+	activityHdlr   *handlers.ActivityHandler
+	versionHdlr    *handlers.VersionHandler
+	aiHdlr         *handlers.AIHandler
+	authMw         *auth.AuthMiddleware
+	authLimiter    *SlidingWindowRateLimiter
+	aiLimiter      *SlidingWindowRateLimiter
+	generalLimiter *SlidingWindowRateLimiter
+	wsUpgrader     websocket.Upgrader
+	startTime      time.Time
 }
 
-// NewServer creates a new collaboration Server.
+// NewServer creates a new collaboration Server with environment configuration.
 func NewServer(hub *rooms.Hub, stores ...storage.Storage) *Server {
+	cfg, err := LoadServerConfigFromEnv()
+	if err != nil {
+		log.Printf("[Server Config Warning] Failed loading environment config: %v. Using defaults.", err)
+		cfg = DefaultServerConfig()
+	}
+	return NewServerWithConfig(hub, cfg, stores...)
+}
+
+// NewServerWithConfig creates a new collaboration Server with custom ServerConfig.
+func NewServerWithConfig(hub *rooms.Hub, cfg ServerConfig, stores ...storage.Storage) *Server {
 	var store storage.Storage
 	if len(stores) > 0 && stores[0] != nil {
 		store = stores[0]
@@ -57,38 +62,51 @@ func NewServer(hub *rooms.Hub, stores ...storage.Storage) *Server {
 		store = storage.NewMemoryStorage()
 	}
 
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = "alignify-dev-jwt-secret-key-change-in-production-2026"
-	}
-
-	jwtManager := auth.NewJWTManager(secret, 7*24*time.Hour)
+	jwtManager := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
 	authMw := auth.NewAuthMiddleware(jwtManager)
 	ticketStore := auth.NewTicketStore(60 * time.Second)
 
+	isProd := cfg.Environment == "production" || cfg.Environment == "staging"
+	wsUpgrader := websocket.Upgrader{
+		ReadBufferSize:  1024 * 1024,
+		WriteBufferSize: 1024 * 1024,
+		CheckOrigin:     CSWSHOriginChecker(cfg.AllowedOrigins, isProd),
+	}
+
+	authLim := NewSlidingWindowRateLimiter(cfg.AuthRateLimit)
+	aiLim := NewSlidingWindowRateLimiter(cfg.AIRateLimit)
+	genLim := NewSlidingWindowRateLimiter(cfg.APIRateLimit)
+
 	return &Server{
-		hub:           hub,
-		store:         store,
-		jwtManager:    jwtManager,
-		ticketStore:   ticketStore,
-		authHandler:   handlers.NewAuthHandler(store, jwtManager),
-		workspaceHdlr: handlers.NewWorkspaceHandler(store, hub),
-		boardHdlr:     handlers.NewBoardHandler(store),
-		commentHdlr:   handlers.NewCommentHandler(store),
-		activityHdlr:  handlers.NewActivityHandler(store),
-		versionHdlr:   handlers.NewVersionHandler(store, hub),
-		aiHdlr:        handlers.NewAIHandler(store, hub, nil),
-		authMw:        authMw,
-		startTime:     time.Now(),
+		hub:            hub,
+		store:          store,
+		config:         cfg,
+		jwtManager:     jwtManager,
+		ticketStore:    ticketStore,
+		authHandler:    handlers.NewAuthHandler(store, jwtManager),
+		workspaceHdlr:  handlers.NewWorkspaceHandler(store, hub),
+		boardHdlr:      handlers.NewBoardHandler(store),
+		commentHdlr:    handlers.NewCommentHandler(store),
+		activityHdlr:   handlers.NewActivityHandler(store),
+		versionHdlr:    handlers.NewVersionHandler(store, hub),
+		aiHdlr:         handlers.NewAIHandler(store, hub, nil),
+		authMw:         authMw,
+		authLimiter:    authLim,
+		aiLimiter:      aiLim,
+		generalLimiter: genLim,
+		wsUpgrader:     wsUpgrader,
+		startTime:      time.Now(),
 	}
 }
 
-// Routes configures and returns the HTTP handler mux.
+// Routes configures and returns the HTTP handler mux wrapped with the security middleware pipeline.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	// 1. Core & Diagnostics
 	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/healthz", s.handleHealth)
+	mux.HandleFunc("/readyz", s.handleReadyz)
 	mux.HandleFunc("/api/rooms", s.handleRoomsStats)
 
 	// 2. Auth Endpoints
@@ -118,11 +136,23 @@ func (s *Server) Routes() http.Handler {
 	// 5. WebSocket Real-Time Collaboration Gateway
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
-	return corsMiddleware(mux)
+	// Security & Observability Pipeline
+	isProd := s.config.Environment == "production" || s.config.Environment == "staging"
+	var handler http.Handler = mux
+
+	if s.config.EnableRateLimiting {
+		handler = RateLimitMiddleware(s.authLimiter, s.aiLimiter, s.generalLimiter, handler)
+	}
+
+	handler = RequestBodyLimitMiddleware(s.config.MaxRequestBodySize, s.config.MaxThumbnailSize, handler)
+	handler = CORSMiddleware(s.config.AllowedOrigins, handler)
+	handler = SecurityHeadersMiddleware(isProd, handler)
+	handler = StructuredLoggingMiddleware(handler)
+
+	return handler
 }
 
 func (s *Server) handleWorkspacesRouter(w http.ResponseWriter, r *http.Request) {
-	// Path format: /api/workspaces/{workspaceId}[/members[/{userId}] | /boards]
 	subPath := strings.TrimPrefix(r.URL.Path, "/api/workspaces/")
 	if subPath == "" {
 		if r.Method == http.MethodGet {
@@ -215,7 +245,6 @@ func (s *Server) handleWorkspacesRouter(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleBoardsRouter(w http.ResponseWriter, r *http.Request) {
-	// Path format: /api/boards/{boardId}[/export | /favorite | /thumbnail | /comments[/{commentId}] | /activity | /versions[/{versionId}[/restore]]]
 	subPath := strings.TrimPrefix(r.URL.Path, "/api/boards/")
 	if subPath == "" {
 		handlers.WriteError(w, http.StatusNotFound, "Board ID is required")
@@ -229,7 +258,6 @@ func (s *Server) handleBoardsRouter(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 1 {
 		switch r.Method {
 		case http.MethodGet:
-			// Allows authenticated users or public boards
 			s.authMw.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				s.boardHdlr.GetBoard(w, r, boardID)
 			})).ServeHTTP(w, r)
@@ -445,6 +473,38 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(stats)
 }
 
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	status := "ready"
+	storageStatus := "ok"
+	statusCode := http.StatusOK
+
+	if _, err := s.store.Users().GetUserByEmail(ctx, "nonexistent-probe@alignify.dev"); err != nil && !strings.Contains(err.Error(), "not found") {
+		storageStatus = "degraded"
+		status = "degraded"
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	resp := map[string]interface{}{
+		"status":        status,
+		"storage":       storageStatus,
+		"uptimeSeconds": int64(time.Since(s.startTime).Seconds()),
+		"activeRooms":   s.hub.ActiveRoomsCount(),
+		"activeClients": s.hub.ActiveClientsCount(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (s *Server) handleCreateWSTicket(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		handlers.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -596,7 +656,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := s.wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[Server] WebSocket upgrade error: %v", err)
 		return
@@ -609,21 +669,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	go cl.WritePump()
 	go cl.ReadPump()
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 func randomID(n int) string {
