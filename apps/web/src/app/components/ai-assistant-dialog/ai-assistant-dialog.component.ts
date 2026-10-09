@@ -5,7 +5,6 @@ import {
   signal,
   computed,
   input,
-  output,
   ElementRef,
   ViewChild
 } from '@angular/core';

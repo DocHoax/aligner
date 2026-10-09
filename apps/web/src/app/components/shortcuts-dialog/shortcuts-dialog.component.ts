@@ -116,6 +116,7 @@ export class ShortcutsDialogComponent implements OnInit, OnDestroy {
       items: [
         { key: ']', description: 'Bring to Front' },
         { key: '[', description: 'Send to Back' },
+        { key: 'Ctrl + Shift + A', description: 'AI Architecture Assistant' },
         { key: 'Ctrl + K', description: 'Command Palette' },
         { key: '?', description: 'Keyboard Shortcuts Sheet' }
       ]
