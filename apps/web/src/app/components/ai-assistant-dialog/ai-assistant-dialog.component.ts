@@ -6,7 +6,7 @@ import {
   computed,
   input,
   ElementRef,
-  ViewChild
+  viewChild
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -943,7 +943,7 @@ export class AiAssistantDialogComponent implements OnInit {
     return report.findings.filter((f) => f.category === cat);
   });
 
-  @ViewChild('generateInput') generateInputRef?: ElementRef<HTMLTextAreaElement>;
+  readonly generateInputRef = viewChild<ElementRef<HTMLTextAreaElement>>('generateInput');
 
   ngOnInit(): void {
     // Component lifecycle initialized
@@ -952,9 +952,10 @@ export class AiAssistantDialogComponent implements OnInit {
   open(tab: AiTab = 'generate'): void {
     this.activeTab.set(tab);
     this.isOpen.set(true);
+    this.aiService.clearError();
     if (tab === 'generate') {
       setTimeout(() => {
-        this.generateInputRef?.nativeElement.focus();
+        this.generateInputRef()?.nativeElement.focus();
       }, 50);
     }
   }
