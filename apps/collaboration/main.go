@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"alignify/collaboration/pkg/rooms"
 	"alignify/collaboration/pkg/server"
@@ -63,8 +68,52 @@ func main() {
 	hub := rooms.NewHub(store)
 	srv := server.NewServer(hub, store)
 
-	log.Printf("Alignify Collaboration Server listening on port :%s", port)
-	if err := http.ListenAndServe(":"+port, srv.Routes()); err != nil {
-		log.Fatalf("Server shutdown with error: %v", err)
+	httpServer := &http.Server{
+		Addr:              ":" + port,
+		Handler:           srv.Routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	// Channel to listen for errors coming from the listener.
+	serverErrors := make(chan error, 1)
+
+	// Start the service listening for requests in background.
+	go func() {
+		log.Printf("Alignify Collaboration Server listening on port :%s", port)
+		serverErrors <- httpServer.ListenAndServe()
+	}()
+
+	// Channel to listen for an interrupt or terminate signal from the OS.
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+
+	// Blocking main and waiting for shutdown or error.
+	select {
+	case err := <-serverErrors:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("Server startup failed: %v", err)
+		}
+
+	case sig := <-shutdown:
+		log.Printf("Shutdown signal received (%v). Initiating graceful shutdown...", sig)
+
+		// Give outstanding requests a deadline for completion.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		// Asking listener to shut down and shed load.
+		if err := httpServer.Shutdown(ctx); err != nil {
+			log.Printf("[Warning] Graceful shutdown timeout reached, forcing close: %v", err)
+			_ = httpServer.Close()
+		}
+
+		// Close database connection pool if Postgres
+		if pgStore != nil {
+			log.Printf("[Storage] Closing PostgreSQL connection pool...")
+			_ = pgStore.Close()
+		}
+
+		log.Printf("Alignify Collaboration Server stopped cleanly.")
 	}
 }
