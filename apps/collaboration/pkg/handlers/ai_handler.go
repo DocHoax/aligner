@@ -68,6 +68,17 @@ func (h *AIHandler) Generate(w http.ResponseWriter, r *http.Request, boardID str
 		return
 	}
 
+	sanitized, err := ai.SanitizePrompt(req.Prompt)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if isInj, _ := ai.CheckPromptInjection(sanitized); isInj {
+		WriteError(w, http.StatusBadRequest, "Prompt rejected: security policy violation (disallowed instruction)")
+		return
+	}
+	req.Prompt = sanitized
+
 	req.BoardID = boardID
 
 	resp, err := h.provider.GenerateDiagram(r.Context(), req)
@@ -118,6 +129,17 @@ func (h *AIHandler) Modify(w http.ResponseWriter, r *http.Request, boardID strin
 		WriteError(w, http.StatusBadRequest, "Modification prompt is required")
 		return
 	}
+
+	sanitized, err := ai.SanitizePrompt(req.Prompt)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if isInj, _ := ai.CheckPromptInjection(sanitized); isInj {
+		WriteError(w, http.StatusBadRequest, "Prompt rejected: security policy violation (disallowed instruction)")
+		return
+	}
+	req.Prompt = sanitized
 
 	req.BoardID = boardID
 	if len(req.ExistingObjects) == 0 {
@@ -218,6 +240,19 @@ func (h *AIHandler) Explain(w http.ResponseWriter, r *http.Request, boardID stri
 
 	var req ai.ExplainRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if req.Question != "" {
+		sanitized, err := ai.SanitizePrompt(req.Question)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if isInj, _ := ai.CheckPromptInjection(sanitized); isInj {
+			WriteError(w, http.StatusBadRequest, "Question rejected: security policy violation (disallowed instruction)")
+			return
+		}
+		req.Question = sanitized
+	}
 
 	req.BoardID = boardID
 	if len(req.Objects) == 0 {

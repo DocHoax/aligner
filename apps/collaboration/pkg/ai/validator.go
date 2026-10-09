@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
+	"strings"
+	"unicode"
 
 	"alignify/collaboration/pkg/protocol"
 )
@@ -15,16 +18,60 @@ const (
 	// MinCanvasCoordinate defines bounds to avoid infinite coordinate corruption.
 	MinCanvasCoordinate = -100000.0
 	MaxCanvasCoordinate = 100000.0
+
+	// MaxPromptLength caps user AI prompts to mitigate resource exhaustion and buffer overflows.
+	MaxPromptLength = 4000
 )
 
 var (
-	ErrTooManyOperations    = fmt.Errorf("operation count exceeds safety cap of %d", MaxAIOperations)
-	ErrInvalidOperation     = errors.New("invalid operation structure")
-	ErrInvalidCoordinates   = errors.New("object coordinates out of safety bounds")
-	ErrInvalidDimensions    = errors.New("object dimensions must be strictly positive")
-	ErrUnknownObjectType    = errors.New("unsupported canvas object type")
-	ErrDanglingEdgeReference = errors.New("edge references non-existent node ID")
+	ErrTooManyOperations       = fmt.Errorf("operation count exceeds safety cap of %d", MaxAIOperations)
+	ErrInvalidOperation        = errors.New("invalid operation structure")
+	ErrInvalidCoordinates      = errors.New("object coordinates out of safety bounds")
+	ErrInvalidDimensions       = errors.New("object dimensions must be strictly positive")
+	ErrUnknownObjectType       = errors.New("unsupported canvas object type")
+	ErrDanglingEdgeReference   = errors.New("edge references non-existent node ID")
+	ErrPromptInjectionDetected = errors.New("potential prompt injection or malicious pattern detected")
+	ErrPromptTooLong           = fmt.Errorf("prompt length exceeds maximum allowed limit of %d characters", MaxPromptLength)
 )
+
+var promptInjectionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|prompts|rules|commands)\b`),
+	regexp.MustCompile(`(?i)\bdisregard\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|prompts|rules)\b`),
+	regexp.MustCompile(`(?i)\b(?:you\s+are\s+now|act\s+as)\s+(?:dan|jailbreak|unrestricted|god\s*mode|an\s+ai\s+without\s+rules)\b`),
+	regexp.MustCompile(`(?i)\b(?:reveal|print|show|output|leak|exfiltrate)\s+(?:the\s+)?(?:system\s+prompt|api\s*key|env|secret|credentials)\b`),
+	regexp.MustCompile(`(?i)\b(?:system\s+override|system\s+instruction|developer\s+mode\s+enabled)\b`),
+	regexp.MustCompile(`(?i)<\s*script[^>]*>`),
+	regexp.MustCompile(`(?i)javascript:\s*`),
+}
+
+// SanitizePrompt strips non-printable control characters, trims excess whitespace, and bounds length.
+func SanitizePrompt(prompt string) (string, error) {
+	if len(prompt) > MaxPromptLength {
+		return "", ErrPromptTooLong
+	}
+
+	// Filter control characters except standard whitespace (newline, tab, CR)
+	var b strings.Builder
+	for _, r := range prompt {
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+
+	sanitized := strings.TrimSpace(b.String())
+	return sanitized, nil
+}
+
+// CheckPromptInjection inspects prompt text for known jailbreak, prompt leakage, and injection signatures.
+func CheckPromptInjection(prompt string) (bool, string) {
+	for _, pattern := range promptInjectionPatterns {
+		if match := pattern.FindString(prompt); match != "" {
+			return true, match
+		}
+	}
+	return false, ""
+}
 
 var allowedObjectTypes = map[string]bool{
 	"rectangle": true,

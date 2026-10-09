@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 )
 
@@ -230,14 +228,5 @@ func (p *OpenAIProvider) ExplainDiagram(ctx context.Context, req ExplainRequest)
 
 // CreateProviderFromEnv instantiates an AIProvider based on environment variables.
 func CreateProviderFromEnv() AIProvider {
-	providerType := os.Getenv("AI_PROVIDER")
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	model := os.Getenv("OPENAI_MODEL")
-
-	if strings.ToLower(providerType) == "openai" && apiKey != "" {
-		return NewOpenAIProvider(apiKey, baseURL, model)
-	}
-
-	return NewMockAIProvider()
+	return CreateProviderFromConfig()
 }
