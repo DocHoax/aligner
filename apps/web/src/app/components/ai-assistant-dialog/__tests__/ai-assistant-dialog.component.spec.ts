@@ -89,7 +89,8 @@ describe('AiAssistantDialogComponent', () => {
 
     it('should apply prompt presets', () => {
       component.selectGeneratePreset({
-        label: 'E-commerce',
+        title: 'E-commerce',
+        description: 'E-commerce desc',
         prompt: 'Build a high-scale e-commerce architecture',
         direction: 'TB'
       });
@@ -99,7 +100,8 @@ describe('AiAssistantDialogComponent', () => {
 
     it('should apply modify presets', () => {
       component.selectModifyPreset({
-        label: 'Redis Cache',
+        title: 'Redis Cache',
+        description: 'Redis desc',
         prompt: 'Introduce a Redis cache cluster'
       });
       expect(component.modifyPrompt).toBe('Introduce a Redis cache cluster');
