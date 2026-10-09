@@ -156,6 +156,83 @@ func (p *PostgresStorage) RunMigrations(migrationsDir string) error {
 	return nil
 }
 
+// RunRollbacks executes rollback migrations from the given directory in reverse order.
+func (p *PostgresStorage) RunRollbacks(rollbackDir string) error {
+	ctx := context.Background()
+
+	// Ensure schema_migrations table exists
+	var tableExists bool
+	err := p.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'schema_migrations'
+		);
+	`).Scan(&tableExists)
+	if err != nil || !tableExists {
+		return nil // Nothing to roll back
+	}
+
+	files, err := os.ReadDir(rollbackDir)
+	if err != nil {
+		return fmt.Errorf("failed to read rollback dir %s: %w", rollbackDir, err)
+	}
+
+	var sqlFiles []string
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".sql") {
+			sqlFiles = append(sqlFiles, f.Name())
+		}
+	}
+	// Sort in reverse order (e.g. 011 -> 001)
+	sort.Sort(sort.Reverse(sort.StringSlice(sqlFiles)))
+
+	for _, fileName := range sqlFiles {
+		parts := strings.SplitN(fileName, "_", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		prefix := parts[0] + "_"
+
+		var appliedVersion string
+		checkErr := p.db.QueryRowContext(ctx, `
+			SELECT version FROM schema_migrations WHERE version LIKE $1 || '%' ORDER BY version DESC LIMIT 1
+		`, prefix).Scan(&appliedVersion)
+
+		if checkErr != nil {
+			continue // Migration was not applied, skip rollback
+		}
+
+		filePath := filepath.Join(rollbackDir, fileName)
+		content, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			return fmt.Errorf("failed to read rollback %s: %w", fileName, readErr)
+		}
+
+		tx, txErr := p.db.BeginTx(ctx, nil)
+		if txErr != nil {
+			return fmt.Errorf("failed to start tx for %s: %w", fileName, txErr)
+		}
+
+		if _, execErr := tx.ExecContext(ctx, string(content)); execErr != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to execute rollback %s: %w", fileName, execErr)
+		}
+
+		if _, delErr := tx.ExecContext(ctx, `
+			DELETE FROM schema_migrations WHERE version = $1
+		`, appliedVersion); delErr != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to remove migration record %s: %w", appliedVersion, delErr)
+		}
+
+		if commitErr := tx.Commit(); commitErr != nil {
+			return fmt.Errorf("failed to commit rollback %s: %w", fileName, commitErr)
+		}
+	}
+
+	return nil
+}
+
 // ==========================================
 // Postgres User Repository
 // ==========================================

@@ -224,3 +224,39 @@ func TestPostgresStorage_FullLifecycle(t *testing.T) {
 		t.Fatalf("Postgres: expected 1 tail operation with seq 3, got %d", len(tailOps))
 	}
 }
+
+func TestPostgresStorage_MigrationAndRollbackCycle(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/alignify?sslmode=disable"
+	}
+
+	store, err := storage.NewPostgresStorage(dbURL)
+	if err != nil {
+		t.Skipf("Skipping Postgres migration/rollback test: PostgreSQL not reachable (%v)", err)
+		return
+	}
+	defer store.Close()
+
+	migDir := "../../migrations"
+	if _, err := os.Stat(migDir); err != nil {
+		migDir = "../../../apps/collaboration/migrations"
+	}
+	absMigDir, _ := filepath.Abs(migDir)
+	absRollbackDir := filepath.Join(absMigDir, "rollback")
+
+	// Step 1: Run all forward migrations
+	if err := store.RunMigrations(absMigDir); err != nil {
+		t.Fatalf("Forward migration failed: %v", err)
+	}
+
+	// Step 2: Run all rollback migrations (011 -> 001)
+	if err := store.RunRollbacks(absRollbackDir); err != nil {
+		t.Fatalf("Rollback migration execution failed: %v", err)
+	}
+
+	// Step 3: Re-apply all forward migrations (001 -> 011) to confirm complete clean recovery
+	if err := store.RunMigrations(absMigDir); err != nil {
+		t.Fatalf("Re-applying forward migrations after rollback failed: %v", err)
+	}
+}
