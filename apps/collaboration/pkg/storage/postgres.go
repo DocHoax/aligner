@@ -171,15 +171,16 @@ func (p *PostgresStorage) RunMigrations(migrationsDir string) error {
 func (p *PostgresStorage) RunRollbacks(rollbackDir string) error {
 	ctx := context.Background()
 
-	// Ensure schema_migrations table exists
+	// Resolve metadata exactly as the unqualified SQL below does, including
+	// search paths whose first schema does not contain schema_migrations.
 	var tableExists bool
 	err := p.db.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT FROM information_schema.tables
-			WHERE table_schema = 'public' AND table_name = 'schema_migrations'
-		);
+		SELECT pg_catalog.to_regclass('schema_migrations') IS NOT NULL;
 	`).Scan(&tableExists)
-	if err != nil || !tableExists {
+	if err != nil {
+		return fmt.Errorf("failed to locate schema_migrations table: %w", err)
+	}
+	if !tableExists {
 		return nil // Nothing to roll back
 	}
 

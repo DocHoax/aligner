@@ -42,32 +42,42 @@ type Server struct {
 	startTime      time.Time
 }
 
-// NewServer creates a new collaboration Server with environment configuration.
-func NewServer(hub *rooms.Hub, stores ...storage.Storage) *Server {
+// NewServer creates a new collaboration Server with validated environment configuration.
+func NewServer(hub *rooms.Hub, stores ...storage.Storage) (*Server, error) {
 	cfg, err := LoadServerConfigFromEnv()
 	if err != nil {
-		log.Printf("[Server Config Warning] Failed loading environment config: %v. Using defaults.", err)
-		cfg = DefaultServerConfig()
+		return nil, err
 	}
 	return NewServerWithConfig(hub, cfg, stores...)
 }
 
-// NewServerWithConfig creates a new collaboration Server with custom ServerConfig.
-func NewServerWithConfig(hub *rooms.Hub, cfg ServerConfig, stores ...storage.Storage) *Server {
+// NewServerWithConfig creates a new collaboration Server with validated ServerConfig.
+// Production and staging require storage supplied directly or through the hub.
+func NewServerWithConfig(hub *rooms.Hub, cfg ServerConfig, stores ...storage.Storage) (*Server, error) {
+	cfg, err := normalizeAndValidateServerConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	var store storage.Storage
 	if len(stores) > 0 && stores[0] != nil {
 		store = stores[0]
 	} else if hub != nil && hub.Storage() != nil {
 		store = hub.Storage()
+	} else if cfg.isProductionLike() {
+		return nil, errors.New("storage is required in production/staging")
 	} else {
 		store = storage.NewMemoryStorage()
+	}
+	if hub == nil {
+		hub = rooms.NewHub(store)
 	}
 
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
 	authMw := auth.NewAuthMiddleware(jwtManager)
 	ticketStore := auth.NewTicketStore(60 * time.Second)
 
-	isProd := cfg.Environment == "production" || cfg.Environment == "staging"
+	isProd := cfg.isProductionLike()
 	wsUpgrader := websocket.Upgrader{
 		ReadBufferSize:  1024 * 1024,
 		WriteBufferSize: 1024 * 1024,
