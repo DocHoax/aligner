@@ -48,7 +48,7 @@ export default [
           allowNullableBoolean: false,
         },
       ],
-      '@typescript-eslint/restrict-template-literals': [
+      '@typescript-eslint/restrict-template-expressions': [
         'error',
         {
           allowNumber: false,
@@ -60,23 +60,19 @@ export default [
       '@typescript-eslint/restrict-plus-operands': [
         'error',
         {
-          allowNumber: false,
-          allowString: false,
+          allowAny: false,
           allowBoolean: false,
-        },
-      ],
-      '@typescript-eslint/strict-null-checks': [
-        'error',
-        {
-          allowUndefined: false,
-          allowNull: false,
+          allowNullish: false,
+          allowNumberAndString: false,
+          allowRegExp: false,
+          skipCompoundAssignments: false,
         },
       ],
       '@typescript-eslint/prefer-readonly': 'warn',
       '@typescript-eslint/prefer-string-starts-ends-with': 'warn',
       '@typescript-eslint/prefer-includes': 'warn',
       // Correctness baseline
-      '@typescript-eslint/no-duplicate-class-members': 'error',
+      '@typescript-eslint/no-dupe-class-members': 'error',
       '@typescript-eslint/no-duplicate-enum-values': 'error',
       '@typescript-eslint/no-duplicate-type-constituents': 'error',
       '@typescript-eslint/no-for-in-array': 'error',
@@ -88,8 +84,8 @@ export default [
         'error',
         {
           checksConditionals: true,
-          checksDeferral: true,
-          checksReturnValue: true,
+          checksSpreads: true,
+          checksVoidReturn: true,
         },
       ],
       '@typescript-eslint/no-unsafe-argument': 'error',
@@ -104,21 +100,15 @@ export default [
       '@typescript-eslint/no-unsafe-function-type': 'warn',
       '@typescript-eslint/no-unsafe-return': 'error',
       '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-presentational-state': 'warn',
       '@typescript-eslint/restrict-plus-operands': [
         'error',
         {
-          allowNumber: false,
-          allowString: false,
+          allowAny: false,
           allowBoolean: false,
-        },
-      ],
-      '@typescript-eslint/restrict-minus-operands': [
-        'error',
-        {
-          allowNumber: false,
-          allowString: false,
-          allowBoolean: false,
+          allowNullish: false,
+          allowNumberAndString: false,
+          allowRegExp: false,
+          skipCompoundAssignments: false,
         },
       ],
       '@typescript-eslint/consistent-type-exports': 'warn',
