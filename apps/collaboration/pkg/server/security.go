@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrInsecureJWTSecret = errors.New("JWT_SECRET must be at least 32 characters long and non-default in production/staging")
+	ErrInvalidEnvironment = errors.New("ENVIRONMENT must be development, test, staging, or production")
 )
 
 // ServerConfig encapsulates security, network, and runtime operational parameters.
@@ -49,32 +50,51 @@ func DefaultServerConfig() ServerConfig {
 	}
 }
 
+func (cfg ServerConfig) isProductionLike() bool {
+	return cfg.Environment == "production" || cfg.Environment == "staging"
+}
+
+// normalizeAndValidateServerConfig is shared by environment loading and explicit construction.
+func normalizeAndValidateServerConfig(cfg ServerConfig) (ServerConfig, error) {
+	cfg.Environment = strings.ToLower(strings.TrimSpace(cfg.Environment))
+	if cfg.Environment == "" {
+		cfg.Environment = "development"
+	}
+	switch cfg.Environment {
+	case "development", "test", "staging", "production":
+	default:
+		return ServerConfig{}, ErrInvalidEnvironment
+	}
+
+	if cfg.isProductionLike() {
+		secret := strings.TrimSpace(cfg.JWTSecret)
+		if len(secret) < 32 || strings.Contains(strings.ToLower(secret), "alignify-dev") {
+			return ServerConfig{}, ErrInsecureJWTSecret
+		}
+	}
+	return cfg, nil
+}
+
 // LoadServerConfigFromEnv loads configuration from environment variables with production security validation.
 func LoadServerConfigFromEnv() (ServerConfig, error) {
 	cfg := DefaultServerConfig()
 
-	env := os.Getenv("ENVIRONMENT")
-	if env == "" {
-		env = os.Getenv("ENV")
-	}
-	if env != "" {
-		cfg.Environment = strings.ToLower(strings.TrimSpace(env))
+	cfg.Environment = strings.TrimSpace(os.Getenv("ENVIRONMENT"))
+	if cfg.Environment == "" {
+		cfg.Environment = os.Getenv("ENV")
 	}
 
 	secret := os.Getenv("JWT_SECRET")
-	isProdLike := cfg.Environment == "production" || cfg.Environment == "staging"
-
-	if isProdLike {
-		if secret == "" || len(secret) < 32 || strings.Contains(secret, "alignify-dev") {
-			return cfg, fmt.Errorf("%w (current length: %d)", ErrInsecureJWTSecret, len(secret))
-		}
+	if secret != "" {
 		cfg.JWTSecret = secret
-	} else {
-		if secret != "" {
-			cfg.JWTSecret = secret
-		} else {
-			log.Println("[Security Warning] Using default JWT secret in non-production environment. Set JWT_SECRET in production.")
-		}
+	}
+	cfg, err := normalizeAndValidateServerConfig(cfg)
+	if err != nil {
+		return ServerConfig{}, err
+	}
+	isProdLike := cfg.isProductionLike()
+	if !isProdLike && secret == "" {
+		log.Println("[Security Warning] Using default JWT secret in non-production environment. Set JWT_SECRET in production.")
 	}
 
 	if origins := os.Getenv("ALLOWED_ORIGINS"); origins != "" {

@@ -564,10 +564,15 @@ func TestPhase3_LiveEndToEnd_FullIntegration(t *testing.T) {
 	// Disconnect active clients
 	wsA.Close()
 	wsB.Close()
+	hub.RemoveRoom(board.ID)
 
-	// Simulate complete server reboot / fresh hub with PostgreSQL backend
+	// Reconstruct the room with a fresh hub over the same isolated PostgreSQL store.
 	freshHub := rooms.NewHub(store)
-	freshSrv := server.NewServer(freshHub, store)
+	t.Cleanup(func() { freshHub.RemoveRoom(board.ID) })
+	freshSrv, err := server.NewServerWithConfig(freshHub, cfg, store)
+	if err != nil {
+		t.Fatalf("Failed to construct recovery test server: %v", err)
+	}
 	freshTs := httptest.NewServer(freshSrv.Routes())
 	defer freshTs.Close()
 

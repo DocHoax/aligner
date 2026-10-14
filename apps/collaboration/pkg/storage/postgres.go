@@ -89,8 +89,35 @@ func (p *PostgresStorage) Close() error {
 func (p *PostgresStorage) RunMigrations(migrationsDir string) error {
 	ctx := context.Background()
 
-	// 1. Ensure schema_migrations table exists
-	_, err := p.db.ExecContext(ctx, `
+	// Validate the entire forward inventory before touching migration metadata.
+	// ReadDir returns entries in filename order, matching migration order.
+	files, err := os.ReadDir(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("failed to read migrations dir %s: %w", migrationsDir, err)
+	}
+	type migration struct {
+		name    string
+		content []byte
+	}
+	var migrations []migration
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".sql") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(migrationsDir, file.Name()))
+		if err != nil {
+			return fmt.Errorf("failed to read migration %s: %w", file.Name(), err)
+		}
+		if strings.TrimSpace(string(content)) == "" {
+			return fmt.Errorf("migration %s is empty", file.Name())
+		}
+		migrations = append(migrations, migration{name: file.Name(), content: content})
+	}
+	if len(migrations) == 0 {
+		return fmt.Errorf("no SQL migrations found in %s", migrationsDir)
+	}
+
+	_, err = p.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version VARCHAR(255) PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -100,22 +127,9 @@ func (p *PostgresStorage) RunMigrations(migrationsDir string) error {
 		return fmt.Errorf("failed to create schema_migrations table: %w", err)
 	}
 
-	// 2. Read migration files
-	files, err := os.ReadDir(migrationsDir)
-	if err != nil {
-		return fmt.Errorf("failed to read migrations dir %s: %w", migrationsDir, err)
-	}
-
-	var sqlFiles []string
-	for _, f := range files {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), ".sql") {
-			sqlFiles = append(sqlFiles, f.Name())
-		}
-	}
-	sort.Strings(sqlFiles)
-
-	// 3. Apply pending migrations inside transactions
-	for _, fileName := range sqlFiles {
+	// Apply pending migrations inside the existing per-file transactions.
+	for _, migration := range migrations {
+		fileName := migration.name
 		var applied string
 		checkErr := p.db.QueryRowContext(ctx, `
 			SELECT version FROM schema_migrations WHERE version = $1
@@ -124,11 +138,8 @@ func (p *PostgresStorage) RunMigrations(migrationsDir string) error {
 		if checkErr == nil {
 			continue // Already applied
 		}
-
-		filePath := filepath.Join(migrationsDir, fileName)
-		content, readErr := os.ReadFile(filePath)
-		if readErr != nil {
-			return fmt.Errorf("failed to read migration %s: %w", fileName, readErr)
+		if !errors.Is(checkErr, sql.ErrNoRows) {
+			return fmt.Errorf("failed to inspect migration %s: %w", fileName, checkErr)
 		}
 
 		tx, txErr := p.db.BeginTx(ctx, nil)
@@ -136,7 +147,7 @@ func (p *PostgresStorage) RunMigrations(migrationsDir string) error {
 			return fmt.Errorf("failed to start tx for %s: %w", fileName, txErr)
 		}
 
-		if _, execErr := tx.ExecContext(ctx, string(content)); execErr != nil {
+		if _, execErr := tx.ExecContext(ctx, string(migration.content)); execErr != nil {
 			tx.Rollback()
 			return fmt.Errorf("failed to execute migration %s: %w", fileName, execErr)
 		}
