@@ -1,3 +1,5 @@
+package storage
+
 func TestPostgresStorage_MigrationAndRollbackCycle(t *testing.T) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {

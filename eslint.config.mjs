@@ -127,7 +127,7 @@ export default [
       'no-constant-binary-expression': 'error', // constant-expression mistakes
       'no-unsafe-finally': 'error', // unsafe finally
       'valid-typeof': 'error', // invalid typeof
-      'no-duplicate-enums': 'error', // duplicate enum values
+ // duplicate enum values
     },
   },
   {
@@ -138,13 +138,9 @@ export default [
     plugins: {
       '@angular-eslint': angularEslint,
     },
-    extends: [
-      // Angular template correctness checks
-      'plugin:@angular-eslint/template/recommended',
-    ],
     rules: {
       // Angular template specific rules
-      '@angular-eslint/template/click-events-have-key-events': 'warn',
+      '@angular-eslint/click-events-have-key-events': 'warn',
       '@angular-eslint/template/contextualize-blur': 'warn',
       '@angular-eslint/template/interpolation-whitespace': [
         'warn',
