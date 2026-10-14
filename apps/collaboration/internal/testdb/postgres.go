@@ -40,7 +40,11 @@ func Open(t testing.TB) *storage.PostgresStorage {
 		t.Fatal("test database: could not generate an isolated schema name")
 	}
 	schema := "alignify_test_" + hex.EncodeToString(random[:])
+	return openSchema(t, config, schema)
+}
 
+func openSchema(t testing.TB, config *url.URL, schema string) *storage.PostgresStorage {
+	t.Helper()
 	var bootstrap, store *storage.PostgresStorage
 	var conn *sql.Conn
 	ownsSchema := false
