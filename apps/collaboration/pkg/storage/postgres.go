@@ -210,8 +210,11 @@ func (p *PostgresStorage) RunRollbacks(rollbackDir string) error {
 			SELECT version FROM schema_migrations WHERE version LIKE $1 || '%' ORDER BY version DESC LIMIT 1
 		`, prefix).Scan(&appliedVersion)
 
-		if checkErr != nil {
+		if errors.Is(checkErr, sql.ErrNoRows) {
 			continue // Migration was not applied, skip rollback
+		}
+		if checkErr != nil {
+			return fmt.Errorf("failed to inspect rollback %s: %w", fileName, checkErr)
 		}
 
 		filePath := filepath.Join(rollbackDir, fileName)

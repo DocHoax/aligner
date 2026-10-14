@@ -107,7 +107,7 @@ func NewServerWithConfig(hub *rooms.Hub, cfg ServerConfig, stores ...storage.Sto
 		generalLimiter: genLim,
 		wsUpgrader:     wsUpgrader,
 		startTime:      time.Now(),
-	}
+	}, nil
 }
 
 // Routes configures and returns the HTTP handler mux wrapped with the security middleware pipeline.
