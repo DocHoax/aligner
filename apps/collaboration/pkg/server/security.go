@@ -83,18 +83,13 @@ func LoadServerConfigFromEnv() (ServerConfig, error) {
 	if cfg.Environment == "" {
 		cfg.Environment = os.Getenv("ENV")
 	}
+	if cfg.Environment == "" {
+		cfg.Environment = "development"
+	}
 
 	secret := os.Getenv("JWT_SECRET")
 	if secret != "" {
 		cfg.JWTSecret = secret
-	}
-	cfg, err := normalizeAndValidateServerConfig(cfg)
-	if err != nil {
-		return ServerConfig{}, err
-	}
-	isProdLike := cfg.isProductionLike()
-	if !isProdLike && secret == "" {
-		log.Println("[Security Warning] Using default JWT secret in non-production environment. Set JWT_SECRET in production.")
 	}
 
 	if origins := os.Getenv("ALLOWED_ORIGINS"); origins != "" {
@@ -109,8 +104,6 @@ func LoadServerConfigFromEnv() (ServerConfig, error) {
 		if len(cleaned) > 0 {
 			cfg.AllowedOrigins = cleaned
 		}
-	} else if isProdLike {
-		cfg.AllowedOrigins = []string{"https://alignify.dev", "https://staging.alignify.dev"}
 	}
 
 	if rl := os.Getenv("ENABLE_RATE_LIMITING"); rl != "" {
@@ -133,6 +126,11 @@ func LoadServerConfigFromEnv() (ServerConfig, error) {
 		if v, err := strconv.Atoi(apiLimit); err == nil && v > 0 {
 			cfg.APIRateLimit = v
 		}
+	}
+
+	cfg, err := normalizeAndValidateServerConfig(cfg)
+	if err != nil {
+		return ServerConfig{}, err
 	}
 
 	return cfg, nil

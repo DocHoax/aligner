@@ -195,6 +195,9 @@ func (p *PostgresStorage) RunRollbacks(rollbackDir string) error {
 			sqlFiles = append(sqlFiles, f.Name())
 		}
 	}
+	if len(sqlFiles) == 0 {
+		return fmt.Errorf("no SQL rollback files found in %s", rollbackDir)
+	}
 	// Sort in reverse order (e.g. 011 -> 001)
 	sort.Sort(sort.Reverse(sort.StringSlice(sqlFiles)))
 
