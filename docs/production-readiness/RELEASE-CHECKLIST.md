@@ -1,97 +1,188 @@
-# Alignify Phase 5 — Production Release Checklist & Launch Gate
+# Alignify Production Readiness Verification Checklist
 
-**Document ID:** ALIGNIFY-PROD-GATE-001  
-**Target Release Date:** Monday, October 12, 2026  
-**Release Version:** v1.0.0-GA  
-**Auditor / Gatekeeper:** Principal Systems Reliability & Release Gate Engineer  
-**Final Release Decision:** **GO (APPROVED FOR STAGING & PRODUCTION RELEASE)**  
-
----
-
-## 1. Release Gate Criteria Matrix
-
-The Alignify Launch Gate requires 100% compliance across all mandatory verification categories prior to production deployment:
-
-| Gate Dimension | Gate Criteria | Measured Status | Verification Artifact | Decision |
-|---|---|---|---|---|
-| **1. Compilation & Bundling** | Zero TypeScript errors, Production Web Bundle Transfer Size < 200 kB | **PASSED** (143.40 kB total transfer size, 0 TS errors) | `npm run build` | **GO** |
-| **2. Unit Test Suites** | 100% pass rate on TypeScript & Angular web unit tests | **PASSED** (79/79 tests passed, 0 failures) | `npm test` | **GO** |
-| **3. Backend Test Suites** | 100% pass rate across all 9 Go backend packages | **PASSED** (38/38 test functions passed, 0 failures) | `go test -p 1 ./...` | **GO** |
-| **4. Integration & E2E** | Live PostgreSQL + WebSocket multi-user collaboration validation | **PASSED** (11/11 live collaborative scenarios passed) | `TestPhase3_LiveEndToEnd_FullIntegration` | **GO** |
-| **5. Database Migrations** | 1-to-1 forward (001-011) and reverse rollback (011-001) verified on live PostgreSQL | **PASSED** (Full forward + rollback + re-apply cycle passed) | `TestPostgresStorage_MigrationAndRollbackCycle` | **GO** |
-| **6. Security Hardening** | CSWSH, CORS, Security Headers, Rate Limiting, Redaction, Prompt Injection | **PASSED** (All 9 attack vectors verified with automated tests) | `pkg/server/security_test.go` | **GO** |
-| **7. Concurrency & Jitter** | Real-time multi-client collaboration under artificial latency/jitter | **PASSED** (0% message loss, monotonic seq 1..N verified) | `pkg/rooms/concurrency_recovery_test.go` | **GO** |
-| **8. Performance & Latency** | WebSocket RTT < 20ms, API response < 50ms, FCP < 1.0s | **PASSED** (WS RTT: 2.1ms, API: 2.8ms, FCP: 0.72s) | `RELIABILITY-AND-PERFORMANCE.md` | **GO** |
-| **9. Operational Readiness** | Graceful shutdown, Liveness/Readiness probes, Backup runbook | **PASSED** (SIGTERM/SIGINT trapping + 15s draining + `/healthz`/`/readyz`) | `STAGING-AND-ROLLBACK.md` | **GO** |
-| **10. Documentation** | Complete production documentation suite authored & up to date | **PASSED** (All 5 production docs complete) | `docs/production-readiness/` | **GO** |
+**Document ID:** ALIGNIFY-READINESS-CHECKLIST-001  
+**Version:** 0.1.0  
+**Date:** 2026-10-14  
+**Status:** IMPLEMENTATION IN PROGRESS  
 
 ---
 
-## 2. Pre-Deployment Verification Checklist
+## Overview
 
-### 2.1 Codebase & Build Integrity
-- [x] Monorepo TypeScript compilation passes (`npm run build` -> 0 errors).
-- [x] Angular 19 production bundle within budget (`main.js` 126.00 kB transfer, total bundle 143.40 kB transfer).
-- [x] Monorepo unit test suite passes (`npm test` -> 79/79 tests passing).
-- [x] Go backend test suite passes (`go test -p 1 ./...` -> 9/9 packages passing).
-- [x] Go binary builds cleanly (`go build -o bin/server.exe main.go`).
+This checklist verifies the implementation of production readiness safety gates for Alignify. It focuses on verifying that specific safety mechanisms have been correctly implemented, rather than claiming release approval or operational status.
 
-### 2.2 Database Safety & Migration Mechanics
-- [x] 11 sequential forward migrations present in `apps/collaboration/migrations/`.
-- [x] 11 corresponding rollback scripts present in `apps/collaboration/migrations/rollback/`.
-- [x] Migration execution verified inside transactional boundaries (`RunMigrations`).
-- [x] Rollback execution verified in reverse order (`RunRollbacks`).
-- [x] Schema migration version tracking verified (`schema_migrations`).
-- [x] Foreign key constraints enforce `ON DELETE CASCADE` appropriately.
-- [x] Idempotent forward re-application tested on live PostgreSQL 16.
+**Important:** Passing this checklist indicates that the specified safety gates have been implemented. It does NOT imply:
+- Live deployment readiness or operational status
+- Performance benchmarks have been met
+- Organizational approvals have been granted
+- The system is ready for production traffic
 
-### 2.3 Security & Threat Mitigations
-- [x] Cross-Site WebSocket Hijacking (CSWSH) origin validation active.
-- [x] CORS middleware enforcing whitelist with preflight `OPTIONS` caching.
-- [x] Security headers active (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, CSP, HSTS).
-- [x] Per-IP Sliding-Window Rate Limiting active (Auth: 10/min, AI: 30/min, API: 300/min).
-- [x] Request body size limits enforced (1 MB JSON, 5 MB thumbnails).
-- [x] Sensitive parameters (`token`, `ticket`, `password`, `secret`, `apiKey`) redacted from structured logs.
-- [x] Two-tier AI prompt sanitization & jailbreak detection heuristics verified.
-- [x] High-entropy JWT secret validation enforced in staging/production environments.
-
-### 2.4 Reliability, Concurrency & Operations
-- [x] Real-time collaboration tested with multi-user concurrent mutations.
-- [x] Artificial network jitter & latency resilience verified.
-- [x] Automatic 50-operation snapshot compaction verified.
-- [x] Server restart / room eviction state reconstruction verified (Snapshot + Tail Deltas).
-- [x] Graceful shutdown handling (`SIGTERM`/`SIGINT`) with 15s draining deadline.
-- [x] Liveness probe (`/healthz`) and readiness probe (`/readyz`) verified.
-- [x] Automated backup and disaster recovery runbook documented (RPO < 5m, RTO < 15m).
+This checklist verifies implementation of safety mechanisms. Actual production readiness requires successful execution of verification procedures in target environments.
 
 ---
 
-## 3. Deployment Day Timeline (Monday Launch Runbook)
+## Verification Checklist
 
-| Time (UTC) | Phase | Responsible | Action Items | Rollback Trigger |
-|---|---|---|---|---|
-| **08:00** | Pre-Flight Check | Release Lead | Confirm clean working tree, review CI/CD pipeline results, verify staging health. | Any failing test |
-| **08:30** | Staging Promotion | DevOps | Deploy v1.0.0-GA build to Staging cluster; verify `/healthz` and `/readyz`. | Pod crash or health failure |
-| **08:45** | Staging Smoke Tests | QA / SRE | Execute automated smoke script against staging URL; verify auth, WS collaboration, and AI. | Smoke test failure |
-| **09:30** | Go/No-Go Call | Release Gatekeeper | Final review of smoke test evidence and gate criteria. Issue formal launch decision. | Unresolved blocker |
-| **10:00** | Production DB Migration | DBA / DevOps | Execute forward migrations 001-011 against Production PostgreSQL cluster. | Migration DDL error |
-| **10:15** | Production Blue/Green Deploy | DevOps | Deploy collaboration server pods and update CDN static asset distributions. | 5xx error spike > 0.1% |
-| **10:30** | Production Verification | QA / Security | Execute non-destructive production smoke verification; confirm active collaboration rooms. | WS handshake rejection |
-| **11:00** | General Availability (GA) | Product / Exec | Open production ingress to public traffic; monitor live Prometheus / Grafana dashboards. | Critical error budget burn |
+### 1. Isolated PostgreSQL Test Gates ✓
+**Implementation Location:** `apps/collaboration/internal/testdb/`
+- [ ] `postgres.go` exists with `Open()`, `MigrationsDir()`, and `RequireRollback()` functions
+- [ ] `postgres_test.go` exists with validation tests
+- [ ] `Open()` function validates:
+  - Only `TEST_DATABASE_URL` is read (no fallback to `DATABASE_URL`)
+  - Missing `TEST_DATABASE_URL` skips tests with explanation
+  - Only accepts postgres scheme URLs
+  - Only allows loopback hosts (127.0.0.1/localhost)
+  - Database name must match `alignify_test` or `alignify_test_<suffix>`
+  - Only allows `sslmode` and `connect_timeout` query options
+- [ ] `RequireRollback()` checks for `TEST_DATABASE_ALLOW_ROLLBACK=1`
+- [ ] Connection/migration failures cause test failures (not skips)
+- [ ] No credentials/URLs appear in test output or errors
+
+### 2. Fail-Closed Startup Gates ✓
+**Implementation Location:** `apps/collaboration/main.go`, `apps/collaboration/pkg/server/security.go`, `apps/collaboration/pkg/server/server.go`
+- [ ] `LoadServerConfigFromEnv()` validates configuration before returning
+- [ ] No automatic fallback to `DefaultServerConfig()` for missing values
+- [ ] `normalizeAndValidateServerConfig()` rejects:
+  - Missing/short (<32 chars) JWT secrets in staging/production
+  - Development JWT secrets containing "alignify-dev" in staging/production
+- [ ] `main.go` preparation sequence:
+  1. Load and validate configuration FIRST
+  2. Check for explicit `DATABASE_URL` in staging/production
+  3. Attempt PostgreSQL connection ONLY if `DATABASE_URL` set
+  4. Allow memory fallback ONLY in development/test on connection failure
+  5. Validate migration directory exists and contains SQL files BEFORE running migrations
+  6. Treat missing/empty migrations as FATAL in all environments
+  7. Separate preparation (steps above) from listening (actual server start)
+- [ ] No raw database URL logging in server output
+- [ ] Credentials protected in error messages
+
+### 3. Migration Safety Gates ✓
+**Implementation Location:** `apps/collaboration/pkg/storage/postgres.go`
+- [ ] `RunMigrations()`:
+  - Validates migration directory and nonempty SQL inventory before creating metadata
+  - Returns wrapped errors for metadata inspection failures
+  - Only `sql.ErrNoRows` means "not applied"; all other errors returned with context
+  - Fails on missing/unreadable/empty migration directories
+- [ ] `RunRollbacks()`:
+  - Uses `to_regclass('schema_migrations')` without hard-coded schema (respects search_path)
+  - Returns metadata-query errors for inspection failures
+  - Only absent tracking table or `sql.ErrNoRows` for unapplied version is successful no-op
+  - Fails on missing/unreadable/empty rollback directories
+  - Uses same `sql.ErrNoRows` distinction as `RunMigrations()`
+
+### 4. Lint Gate Restoration ✓
+**Implementation Location:** Package root
+- [ ] `package.json` includes:
+  - `"eslint": "^9.0.0"`
+  - `"@typescript-eslint/parser": "^8.0.0"`
+  - `"@typescript-eslint/eslint-plugin": "^8.0.0"`
+  - `"@angular-eslint/eslint-plugin": "^19.0.0"`
+  - `"@angular-eslint/template-parser": "^19.0.0"`
+- [ ] `package.json` lint script: `"lint": "eslint . --ext .ts,.html --max-warnings=0"`
+- [ ] `eslint.config.mjs` exists with correctness-focused baseline rules
+- [ ] `npm run lint` fails on warnings (due to `--max-warnings=0`)
+
+### 5. Documentation Updates ✓
+**Implementation Location:** `docs/production-readiness/`
+- [ ] `BASELINE.md` updated to separate historical assertions from current verification
+- [ ] `STAGING-AND-ROLLBACK.md` updated to focus on verification gates rather than deployment claims
+- [ ] `RELEASE-CHECKLIST.md` updated to this implementation verification checklist
 
 ---
 
-## 4. Final Launch Gate Recommendation
+## Verification Procedures
 
-### Recommendation: **GO**
+To verify this checklist has been correctly implemented:
 
-**Justification:**
-1. **100% Automated Test Pass Rate:** All 79 frontend unit tests, 38 Go backend test functions (48 scenarios), and 11 live collaborative integration scenarios passed with zero failures.
-2. **Database Migration & Rollback Safety:** Bidirectional migration lifecycle (001->011 and 011->001) verified on live PostgreSQL 16 with zero dangling references.
-3. **Defense-in-Depth Security:** All 9 identified threat vectors (CSWSH, CORS, JWT entropy, Rate Limiting, Body limits, Log redaction, AI Prompt injection) are hardened and verified.
-4. **Optimal Performance:** Client bundle transfer size of 143.40 kB is 28% below the strict 200 kB budget; real-time WebSocket RTT is 2.1ms (p50) against a 20ms SLA.
-5. **Operational Rigor:** Graceful shutdown signal handling, health probes, backup/restore procedures, and emergency rollback runbooks are fully implemented and documented.
+### Static Implementation Checks
+```bash
+# 1. Verify isolated test helpers exist
+ls -la apps/collaboration/internal/testdb/
+ls -la apps/collaboration/internal/testdb/postgres.go
+ls -la apps/collaboration/internal/testdb/postgres_test.go
 
-*Sign-off Authorized by:*  
-**Alignify Release & Reliability Engineering Team**  
-Date: October 9, 2026
+# 2. Verify security validation changes
+grep -n "DefaultServerConfig" apps/collaboration/pkg/server/security.go
+# Should NOT see fallback usage in LoadServerConfigFromEnv
+
+# 3. Verify startup sequence changes
+grep -n "prepareServer" apps/collaboration/main.go
+grep -n "func prepareServer" apps/collaboration/main.go
+
+# 4. Verify migration safety changes
+grep -n "no SQL rollback files found" apps/collaboration/pkg/storage/postgres.go
+
+# 5. Verify lint gate restoration
+ls -la eslint.config.mjs
+grep -n "@angular-eslint" package.json
+grep -n "max-warnings=0" package.json
+```
+
+### Functional Verification (Local, No Infrastructure)
+```bash
+# 1. Lint gate should work
+npm run lint
+
+# 2. TypeScript checks
+npm run typecheck
+
+# 3. Go build
+go -C apps/collaboration build ./...
+
+# 4. Go vet
+go -C apps/collaboration vet ./...
+
+# 5. Startup safety - staging should require DATABASE_URL
+env ENVIRONMENT=staging go -C apps/collaboration run . 2>&1 | grep -i "required"
+
+# 6. Startup safety - staging should reject short JWT secret
+env ENVIRONMENT=staging JWT_SECRET=short go -C apps/collaboration run . 2>&1 | grep -i "secret"
+
+# 7. Startup safety - dev should allow memory fallback on connection failure
+env ENVIRONMENT=development go -C apps/collaboration run . 2>&1 | grep -i "using in-memory"
+
+# 8. Test isolation - should skip PostgreSQL without TEST_DATABASE_URL
+env -u DATABASE_URL -u TEST_DATABASE_URL -u TEST_DATABASE_ALLOW_ROLLBACK \
+  go -C apps/collaboration test -count=1 -v ./... 2>&1 | grep -i "skipping"
+
+# 9. Migration safety - should fail on empty migration dir (test with temp dir)
+mkdir -p /tmp/empty_migrations
+env -u DATABASE_URL \
+  go -C apps/collaboration test -run=TestPostgresStorage_MigrationAndRollbackCycle -count=1 -v 2>&1 | grep -i "no sql migration files"
+```
+
+---
+
+## Implementation Status
+
+### Completed
+- [x] Isolated PostgreSQL test helpers with validation
+- [x] Fail-closed startup sequence with configuration-first validation
+- [x] ESLint 9 configuration with correctness baseline
+- [x] Updated migration functions to fail on empty directories
+- [x] Removed configuration fallbacks in security validation
+- [x] Updated all production readiness documentation
+
+### Verification Pending
+- [ ] Local static implementation checks (listed above)
+- [ ] Local functional verification procedures (listed above)
+- [ ] PostgreSQL-backed validation (requires disposable infrastructure)
+
+### Not Applicable (by Design)
+- [ ] Live deployment verification (intentionally omitted from readiness gates)
+- [ ] Performance benchmarking (deferred to later phase)
+- [ ] Organizational approval processes (out of scope for technical gates)
+- [ ] Infrastructure-as-code verification (out of scope)
+
+---
+
+## Next Steps
+
+1. Execute the verification procedures listed above to confirm implementation
+2. Address any implementation gaps discovered during verification
+3. When infrastructure becomes available, execute PostgreSQL-backed validation procedures
+4. Update this checklist with actual verification results as gates are confirmed
+5. Remove this implementation checklist once all gates are verified and replace with evidence-based verification records
+
+**Remember:** This checklist verifies implementation of safety mechanisms. 
+Actual production readiness requires successful execution of verification procedures in target environments.
