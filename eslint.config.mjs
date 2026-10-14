@@ -120,19 +120,6 @@ export default [
           accessibility: 'no-public',
         },
       ],
-      '@typescript-eslint/member-delimiter-style': [
-        'warn',
-        {
-          multiline: {
-            delimiter: 'none',
-            requireLast: false,
-          },
-          singleline: {
-            delimiter: 'semi',
-            requireLast: false,
-          },
-        },
-      ],
       '@typescript-eslint/no-confusing-void-expression': 'error',
       // Specific correctness rules from the plan
       'no-duplicate-case': 'error', // duplicate switch cases
