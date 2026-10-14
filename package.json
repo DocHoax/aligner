@@ -15,12 +15,17 @@
     "test": "npm run test:packages && npm --workspace=apps/web run test:ci",
     "test:packages": "vitest run --dir packages",
     "test:watch": "vitest --dir packages",
-    "lint": "eslint . --ext .ts,.html",
+    "lint": "eslint . --ext .ts,.html --max-warnings=0",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/canvas-engine/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.app.json"
   },
   "devDependencies": {
     "typescript": "^5.7.3",
     "vitest": "^3.0.7",
-    "@types/node": "^22.13.5"
+    "@types/node": "^22.13.5",
+    "eslint": "^9.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@angular-eslint/eslint-plugin": "^19.0.0",
+    "@angular-eslint/template-parser": "^19.0.0"
   }
 }

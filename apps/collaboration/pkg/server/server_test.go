@@ -16,7 +16,10 @@ import (
 
 func TestServer_RESTEndpoints(t *testing.T) {
 	hub := rooms.NewHub()
-	srv := NewServer(hub)
+	srv, err := NewServer(hub)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
 	handler := srv.Routes()
 
 	// 1. Test /health
@@ -48,7 +51,10 @@ func TestServer_RESTEndpoints(t *testing.T) {
 
 func TestServer_WebSocketConnection(t *testing.T) {
 	hub := rooms.NewHub()
-	srv := NewServer(hub)
+	srv, err := NewServer(hub)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
 	testServer := httptest.NewServer(srv.Routes())
 	defer testServer.Close()
 
@@ -80,7 +86,10 @@ func TestServer_WebSocketConnection(t *testing.T) {
 
 func TestServer_WebSocketRejectsInvalidToken(t *testing.T) {
 	hub := rooms.NewHub()
-	srv := NewServer(hub)
+	srv, err := NewServer(hub)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
 	testServer := httptest.NewServer(srv.Routes())
 	defer testServer.Close()
 
@@ -98,7 +107,10 @@ func TestServer_WebSocketRejectsInvalidToken(t *testing.T) {
 
 func TestServer_WebSocketTicketFlow(t *testing.T) {
 	hub := rooms.NewHub()
-	srv := NewServer(hub)
+	srv, err := NewServer(hub)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
 	testServer := httptest.NewServer(srv.Routes())
 	defer testServer.Close()
 
