@@ -12,7 +12,10 @@ import (
 
 func TestHealthEndpoint(t *testing.T) {
 	hub := rooms.NewHub()
-	srv := server.NewServer(hub)
+	srv, err := server.NewServer(hub)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
 
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()
