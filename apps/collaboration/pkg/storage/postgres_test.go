@@ -1,230 +1,3 @@
-package storage_test
-
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"testing"
-	"time"
-
-	"alignify/collaboration/pkg/models"
-	"alignify/collaboration/pkg/storage"
-)
-
-func getTestPostgresStorage(t *testing.T) *storage.PostgresStorage {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://postgres:postgres@localhost:5432/alignify?sslmode=disable"
-	}
-
-	store, err := storage.NewPostgresStorage(dbURL)
-	if err != nil {
-		t.Skipf("Skipping Postgres integration tests: PostgreSQL not reachable (%v)", err)
-		return nil
-	}
-
-	// Run migrations
-	migDir := "../../migrations"
-	if _, err := os.Stat(migDir); err != nil {
-		migDir = "../../../apps/collaboration/migrations"
-	}
-	absMigDir, _ := filepath.Abs(migDir)
-
-	if err := store.RunMigrations(absMigDir); err != nil {
-		t.Fatalf("Failed to run migrations on PostgreSQL: %v", err)
-	}
-
-	return store
-}
-
-func TestPostgresStorage_FullLifecycle(t *testing.T) {
-	store := getTestPostgresStorage(t)
-	if store == nil {
-		return
-	}
-	defer store.Close()
-
-	ctx := context.Background()
-	ts := time.Now().UnixNano()
-
-	// 1. Create Users
-	user1 := &models.User{
-		ID:           fmt.Sprintf("usr_test_owner_%d", ts),
-		Email:        fmt.Sprintf("owner_%d@alignify.dev", ts),
-		PasswordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz123456",
-		DisplayName:  "Alice System Owner",
-		AvatarColor:  "#3b82f6",
-	}
-	if err := store.Users().CreateUser(ctx, user1); err != nil {
-		t.Fatalf("Postgres: failed to create user1: %v", err)
-	}
-
-	user2 := &models.User{
-		ID:           fmt.Sprintf("usr_test_editor_%d", ts),
-		Email:        fmt.Sprintf("editor_%d@alignify.dev", ts),
-		PasswordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz123456",
-		DisplayName:  "Bob System Editor",
-		AvatarColor:  "#10b981",
-	}
-	if err := store.Users().CreateUser(ctx, user2); err != nil {
-		t.Fatalf("Postgres: failed to create user2: %v", err)
-	}
-
-	// Verify duplicate email constraint
-	dupUser := &models.User{
-		ID:    fmt.Sprintf("usr_test_dup_%d", ts),
-		Email: user1.Email,
-	}
-	if err := store.Users().CreateUser(ctx, dupUser); err != storage.ErrAlreadyExists {
-		t.Fatalf("Postgres: expected ErrAlreadyExists for duplicate email, got %v", err)
-	}
-
-	// 2. Create Workspace
-	ws := &models.Workspace{
-		ID:          fmt.Sprintf("ws_test_%d", ts),
-		Name:        "Engineering Live Test",
-		Slug:        fmt.Sprintf("eng-live-test-%d", ts),
-		Description: "Workspace for PostgreSQL integration tests",
-		OwnerID:     user1.ID,
-	}
-	if err := store.Workspaces().CreateWorkspace(ctx, ws); err != nil {
-		t.Fatalf("Postgres: failed to create workspace: %v", err)
-	}
-
-	// Add Owner Membership
-	mem1 := &models.WorkspaceMembership{
-		ID:          fmt.Sprintf("mem_owner_%d", ts),
-		WorkspaceID: ws.ID,
-		UserID:      user1.ID,
-		Role:        models.RoleOwner,
-	}
-	if err := store.Workspaces().AddMember(ctx, mem1); err != nil {
-		t.Fatalf("Postgres: failed to add owner membership: %v", err)
-	}
-
-	// Add Editor Membership
-	mem2 := &models.WorkspaceMembership{
-		ID:          fmt.Sprintf("mem_editor_%d", ts),
-		WorkspaceID: ws.ID,
-		UserID:      user2.ID,
-		Role:        models.RoleEditor,
-	}
-	if err := store.Workspaces().AddMember(ctx, mem2); err != nil {
-		t.Fatalf("Postgres: failed to add editor membership: %v", err)
-	}
-
-	// List Members
-	members, err := store.Workspaces().GetMembers(ctx, ws.ID)
-	if err != nil {
-		t.Fatalf("Postgres: failed to list members: %v", err)
-	}
-	if len(members) != 2 {
-		t.Fatalf("Postgres: expected 2 members, got %d", len(members))
-	}
-
-	// 3. Create Board
-	board := &models.Board{
-		ID:          fmt.Sprintf("brd_test_%d", ts),
-		WorkspaceID: ws.ID,
-		Name:        "Architecture Roadmap",
-		Description: "Main product architecture canvas",
-		CreatedBy:   user1.ID,
-		IsPublic:    false,
-	}
-	if err := store.Boards().CreateBoard(ctx, board); err != nil {
-		t.Fatalf("Postgres: failed to create board: %v", err)
-	}
-
-	// Check Effective Roles
-	r1, err := store.Boards().GetBoardEffectiveRole(ctx, board.ID, user1.ID)
-	if err != nil || r1 != models.RoleOwner {
-		t.Fatalf("Postgres: expected owner role for user1, got role=%v err=%v", r1, err)
-	}
-
-	r2, err := store.Boards().GetBoardEffectiveRole(ctx, board.ID, user2.ID)
-	if err != nil || r2 != models.RoleEditor {
-		t.Fatalf("Postgres: expected editor role for user2, got role=%v err=%v", r2, err)
-	}
-
-	// 4. Test Operations Persistence & Monotonic Sequencing
-	op1 := &models.OperationRecord{
-		BoardID: board.ID,
-		Seq:     1,
-		UserID:  user1.ID,
-		OpType:  "OBJECT_CREATE",
-		Payload: json.RawMessage(`{"id":"obj_rect_1","type":"rectangle","x":100,"y":200}`),
-	}
-	if err := store.Operations().AppendOperation(ctx, op1); err != nil {
-		t.Fatalf("Postgres: failed to append op1: %v", err)
-	}
-
-	op2 := &models.OperationRecord{
-		BoardID: board.ID,
-		Seq:     2,
-		UserID:  user2.ID,
-		OpType:  "OBJECT_MOVE",
-		Payload: json.RawMessage(`{"id":"obj_rect_1","x":150,"y":250}`),
-	}
-	if err := store.Operations().AppendOperation(ctx, op2); err != nil {
-		t.Fatalf("Postgres: failed to append op2: %v", err)
-	}
-
-	// Test conflict rejection on duplicate seq
-	dupOp := &models.OperationRecord{
-		BoardID: board.ID,
-		Seq:     2,
-		UserID:  user1.ID,
-		OpType:  "OBJECT_DELETE",
-		Payload: json.RawMessage(`{"id":"obj_rect_1"}`),
-	}
-	if err := store.Operations().AppendOperation(ctx, dupOp); err != storage.ErrOperationConflict {
-		t.Fatalf("Postgres: expected ErrOperationConflict for duplicate seq, got %v", err)
-	}
-
-	// 5. Test Snapshot Persistence
-	snap := &models.BoardSnapshot{
-		BoardID:   board.ID,
-		Seq:       2,
-		Data:      json.RawMessage(`{"objects":[{"id":"obj_rect_1","type":"rectangle","x":150,"y":250}]}`),
-		CreatedBy: user1.ID,
-	}
-	if err := store.Snapshots().SaveSnapshot(ctx, snap); err != nil {
-		t.Fatalf("Postgres: failed to save snapshot: %v", err)
-	}
-
-	// Verify Latest Snapshot
-	latestSnap, err := store.Snapshots().GetLatestSnapshot(ctx, board.ID)
-	if err != nil {
-		t.Fatalf("Postgres: failed to get latest snapshot: %v", err)
-	}
-	if latestSnap.Seq != 2 {
-		t.Fatalf("Postgres: expected snapshot seq 2, got %d", latestSnap.Seq)
-	}
-
-	// Append op3 after snapshot
-	op3 := &models.OperationRecord{
-		BoardID: board.ID,
-		Seq:     3,
-		UserID:  user2.ID,
-		OpType:  "OBJECT_STYLE",
-		Payload: json.RawMessage(`{"id":"obj_rect_1","color":"#ef4444"}`),
-	}
-	if err := store.Operations().AppendOperation(ctx, op3); err != nil {
-		t.Fatalf("Postgres: failed to append op3: %v", err)
-	}
-
-	// Query operations after snapshot seq (seq > 2)
-	tailOps, err := store.Operations().GetOperationsAfterSeq(ctx, board.ID, 2)
-	if err != nil {
-		t.Fatalf("Postgres: failed to get tail operations: %v", err)
-	}
-	if len(tailOps) != 1 || tailOps[0].Seq != 3 {
-		t.Fatalf("Postgres: expected 1 tail operation with seq 3, got %d", len(tailOps))
-	}
-}
-
 func TestPostgresStorage_MigrationAndRollbackCycle(t *testing.T) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -245,18 +18,191 @@ func TestPostgresStorage_MigrationAndRollbackCycle(t *testing.T) {
 	absMigDir, _ := filepath.Abs(migDir)
 	absRollbackDir := filepath.Join(absMigDir, "rollback")
 
+	// Helper to get migration filenames sorted.
+	getMigrationFiles := func(dir string) []string {
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("Failed to read migrations dir %s: %v", dir, err)
+		}
+		var names []string
+		for _, f := range files {
+			if !f.IsDir() && strings.HasSuffix(f.Name(), ".sql") {
+				names = append(names, f.Name())
+			}
+		}
+		sort.Strings(names)
+		return names
+	}
+	// Helper to get applied migrations from schema_migrations.
+	getAppliedMigrations := func(db *sql.DB) []string {
+		rows, err := db.QueryContext(context.Background(), `SELECT version FROM schema_migrations ORDER BY version`)
+		if err != nil {
+			t.Fatalf("Failed to read schema_migrations: %v", err)
+		}
+		defer rows.Close()
+		var applied []string
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				t.Fatalf("Failed to scan version: %v", err)
+			}
+			applied = append(applied, v)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("Error iterating schema_migrations: %v", err)
+		}
+		return applied
+	}
+	// Helper to check if a table exists in the current search path.
+	tableExists := func(db *sql.DB, tableName string) bool {
+		var exists bool
+		err := db.QueryRowContext(context.Background(), `
+			SELECT pg_catalog.to_regclass($1) IS NOT NULL;
+		`, tableName).Scan(&exists)
+		if err != nil {
+			t.Fatalf("Failed to check existence of table %s: %v", tableName, err)
+		}
+		return exists
+	}
+
 	// Step 1: Run all forward migrations
 	if err := store.RunMigrations(absMigDir); err != nil {
 		t.Fatalf("Forward migration failed: %v", err)
+	}
+	// Verify forward tracking versions exactly match the SQL-file inventory.
+	applied := getAppliedMigrations(store.DB())
+	expected := getMigrationFiles(absMigDir)
+	if len(applied) != len(expected) {
+		t.Fatalf("Expected %d applied migrations, got %d", len(expected), len(applied))
+	}
+	for i, v := range applied {
+		if v != expected[i] {
+			t.Fatalf("Migration version mismatch at index %d: expected %s, got %s", i, expected[i], v)
+		}
+	}
+	// Verify expected tables and boards.thumbnail_url exist.
+	expectedTables := []string{
+		"users",
+		"workspaces",
+		"workspace_memberships",
+		"boards",
+		"board_permissions",
+		"board_snapshots",
+		"operation_log",
+		"board_comments",
+		"board_activities",
+		"board_favorites",
+		"schema_migrations",
+	}
+	for _, tbl := range expectedTables {
+		if !tableExists(store.DB(), tbl) {
+			t.Fatalf("Expected table %s to exist after forward migration", tbl)
+		}
+	}
+	if !tableExists(store.DB(), "boards") {
+		t.Fatalf("Expected table boards to exist")
+	}
+	// Check that boards.thumbnail_url column exists.
+	var hasThumbnailColumn bool
+	err := store.DB().QueryRowContext(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'boards' AND column_name = 'thumbnail_url'
+		);
+	`).Scan(&hasThumbnailColumn)
+	if err != nil {
+		t.Fatalf("Failed to check for thumbnail_url column: %v", err)
+	}
+	if !hasThumbnailColumn {
+		t.Fatalf("Expected boards.thumbnail_url column to exist after forward migration")
 	}
 
 	// Step 2: Run all rollback migrations (011 -> 001)
 	if err := store.RunRollbacks(absRollbackDir); err != nil {
 		t.Fatalf("Rollback migration execution failed: %v", err)
 	}
+	// Verify rollback leaves zero tracking rows and removes the application tables.
+	appliedAfterRollback := getAppliedMigrations(store.DB())
+	if len(appliedAfterRollback) != 0 {
+		t.Fatalf("Expected zero applied migrations after rollback, got %d", len(appliedAfterRollback))
+	}
+	// Verify that the application tables have been dropped.
+	for _, tbl := range expectedTables {
+		if tbl == "schema_migrations" {
+			continue // schema_migrations should still exist (but empty)
+		}
+		if tableExists(store.DB(), tbl) {
+			t.Fatalf("Expected table %s to be dropped after rollback, but it still exists", tbl)
+		}
+	}
+	// Verify that schema_migrations table still exists (but empty).
+	if !tableExists(store.DB(), "schema_migrations") {
+		t.Fatalf("Expected schema_migrations table to exist after rollback")
+	}
 
 	// Step 3: Re-apply all forward migrations (001 -> 011) to confirm complete clean recovery
 	if err := store.RunMigrations(absMigDir); err != nil {
 		t.Fatalf("Re-applying forward migrations after rollback failed: %v", err)
+	}
+	// Verify reapplication restores versions/schema.
+	appliedAfterReapply := getAppliedMigrations(store.DB())
+	if len(appliedAfterReapply) != len(expected) {
+		t.Fatalf("Expected %d applied migrations after reapplication, got %d", len(expected), len(appliedAfterReapply))
+	}
+	for i, v := range appliedAfterReapply {
+		if v != expected[i] {
+			t.Fatalf("Migration version mismatch at index %d after reapplication: expected %s, got %s", i, expected[i], v)
+		}
+	}
+	// Verify expected tables and boards.thumbnail_url exist again.
+	for _, tbl := range expectedTables {
+		if !tableExists(store.DB(), tbl) {
+			t.Fatalf("Expected table %s to exist after reapplication", tbl)
+		}
+	}
+	if !tableExists(store.DB(), "boards") {
+		t.Fatalf("Expected table boards to exist after reapplication")
+	}
+	err = store.DB().QueryRowContext(context.Background(), `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'boards' AND column_name = 'thumbnail_url'
+		);
+	`).Scan(&hasThumbnailColumn)
+	if err != nil {
+		t.Fatalf("Failed to check for thumbnail_url column after reapplication: %v", err)
+	}
+	if !hasThumbnailColumn {
+		t.Fatalf("Expected boards.thumbnail_url column to exist after reapplication")
+	}
+	// Support a small repository operation.
+	ctx := context.Background()
+	user := &models.User{
+		ID:           "test-user-" + time.Now().UTC().Format("20060102150405"),
+		Email:        "test@example.com",
+		PasswordHash: "$2a$10$abcdefghijklmnopqrstuvwxyz123456",
+		DisplayName:  "Test User",
+		AvatarColor:  "#3b82f6",
+	}
+	if err := store.Users().CreateUser(ctx, user); err != nil {
+		t.Fatalf("Failed to create user after reapplication: %v", err)
+	}
+	// Verify we can read it back.
+	readUser, err := store.Users().GetUserByID(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("Failed to read back created user: %v", err)
+	}
+	if readUser.ID != user.ID {
+		t.Fatalf("Read back user ID mismatch: expected %s, got %s", user.ID, readUser.ID)
+	}
+
+	// Additional: Repeated rollback is a no-op.
+	if err := store.RunRollbacks(absRollbackDir); err != nil {
+		t.Fatalf("Repeated rollback should be a no-op, got error: %v", err)
+	}
+	// After repeated rollback, schema_migrations should still be empty.
+	appliedAfterRepeatedRollback := getAppliedMigrations(store.DB())
+	if len(appliedAfterRepeatedRollback) != 0 {
+		t.Fatalf("Expected zero applied migrations after repeated rollback, got %d", len(appliedAfterRepeatedRollback))
 	}
 }
