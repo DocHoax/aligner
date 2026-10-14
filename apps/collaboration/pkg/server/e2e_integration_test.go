@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"alignify/collaboration/internal/testdb"
 	"alignify/collaboration/pkg/models"
 	"alignify/collaboration/pkg/protocol"
 	"alignify/collaboration/pkg/rooms"
@@ -41,27 +40,11 @@ func readRawServerMsg(t *testing.T, ws *websocket.Conn, timeout time.Duration) *
 }
 
 func getE2EPostgresStorage(t *testing.T) *storage.PostgresStorage {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://postgres:postgres@localhost:5432/alignify?sslmode=disable"
+	t.Helper()
+	store := testdb.Open(t)
+	if err := store.RunMigrations(testdb.MigrationsDir(t)); err != nil {
+		t.Fatalf("Failed to run migrations on isolated PostgreSQL: %v", err)
 	}
-
-	store, err := storage.NewPostgresStorage(dbURL)
-	if err != nil {
-		t.Skipf("Skipping Postgres E2E tests: PostgreSQL not reachable (%v)", err)
-		return nil
-	}
-
-	migDir := "../../migrations"
-	if _, err := os.Stat(migDir); err != nil {
-		migDir = "../../../apps/collaboration/migrations"
-	}
-	absMigDir, _ := filepath.Abs(migDir)
-
-	if err := store.RunMigrations(absMigDir); err != nil {
-		t.Fatalf("Failed to run migrations on PostgreSQL: %v", err)
-	}
-
 	return store
 }
 
@@ -70,13 +53,14 @@ func getE2EPostgresStorage(t *testing.T) *storage.PostgresStorage {
 // 50-op Snapshot Compaction, Server Crash/Restart Recovery, Viewer RBAC Rejection, and Security.
 func TestPhase3_LiveEndToEnd_FullIntegration(t *testing.T) {
 	store := getE2EPostgresStorage(t)
-	if store == nil {
-		return
-	}
-	defer store.Close()
+	cfg := server.DefaultServerConfig()
+	cfg.Environment = "test"
 
 	hub := rooms.NewHub(store)
-	srv := server.NewServer(hub, store)
+	srv, err := server.NewServerWithConfig(hub, cfg, store)
+	if err != nil {
+		t.Fatalf("Failed to construct test server: %v", err)
+	}
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -321,6 +305,7 @@ func TestPhase3_LiveEndToEnd_FullIntegration(t *testing.T) {
 	_ = json.NewDecoder(createBrdResp.Body).Decode(&createBoardResponse)
 	createBrdResp.Body.Close()
 	board := createBoardResponse.Board
+	t.Cleanup(func() { hub.RemoveRoom(board.ID) })
 	t.Logf("✓ Created Board '%s' (ID: %s)", board.Name, board.ID)
 
 	// User B retrieves board details
