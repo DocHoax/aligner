@@ -1,6 +1,9 @@
 # Alignify Phase 5 — Production Security Audit & Hardening Report
 
-**Document Status:** Approved for Production Launch (Monday Staging & Production Targets)  
+**Document Status:** Historical report — not current production approval  
+
+> **Current-status notice (2026-10-15):** The assertions below are historical and have not been re-established for the current revision. They are not deployment approval or current security-verification evidence. Consult [BASELINE.md](BASELINE.md) for executed checks, pending coverage, and blockers. This notice does not constitute a new security audit.
+
 **Date:** October 9, 2026  
 **Auditor:** Principal Security & Systems Reliability Engineer  
 **Scope:** Alignify Monorepo (Web App, Real-Time Collaboration Engine, REST Endpoints, AI Subsystem)

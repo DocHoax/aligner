@@ -2,175 +2,258 @@ package testdb
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"alignify/collaboration/pkg/storage"
-	"alignify/collaboration/pkg/storage/postgres"
 )
 
-// Open returns an isolated PostgreSQL store for testing. It must be called
-// only with TEST_DATABASE_URL set; otherwise it skips the test. The caller
-// owns the returned store and must close it when done. The store is
-// unmigrated and uses a unique, quoted schema for isolation.
-//
-// The function validates the URL before connecting: it must be a PostgreSQL
-// connection string with an explicit loopback host (127.0.0.1 or localhost)
-// and a database named alignify_test or alignify_test_<suffix>. Only sslmode
-// and connect_timeout query options are allowed. The effective database name
-// is confirmed before issuing DDL.
-//
-// Isolation is achieved by setting search_path to the unique schema in the
-// connection string (no public fallback). The helper creates the schema,
-// registers cleanup to drop only that schema, and returns a store whose
-// connection pool is configured with that search_path.
-//
-// If the URL is missing, the test is skipped with an explanation.
-// If the URL is present but invalid, malformed, or points to a disallowed
-// target (application/system database, remote host, or options that can
-// override host/database/schema), the test fails.
-// Connection or migration failures cause the test to fail, not skip.
-func Open(t testing.TB) *storage.PostgresStorage {
-	t.Helper()
+const queryTimeout = 5 * time.Second
 
-	// Require explicit test database URL; no application/default fallback.
-	testURL := os.Getenv("TEST_DATABASE_URL")
-	if testURL == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping PostgreSQL integration test. " +
-			"Set it to a disposable database (e.g. postgres://user:pass@127.0.0.1:5432/alignify_test?sslmode=disable)")
-		return nil
+var testDatabaseName = regexp.MustCompile(`^alignify_test(_[a-zA-Z0-9_-]+)?$`)
+
+// reporter keeps the policy wrapper testable without implementing testing.TB.
+// Fatalf and Skip must abort the current test, as they do on testing.TB.
+type reporter interface {
+	Helper()
+	Skip(...any)
+	Fatalf(string, ...any)
+	Errorf(string, ...any)
+	Cleanup(func())
+}
+
+type databaseTarget struct {
+	url      url.URL
+	database string
+}
+
+// validateURL is pure and returns only fixed, credential-safe diagnostics.
+func validateURL(raw string) (databaseTarget, error) {
+	invalid := func(message string) (databaseTarget, error) {
+		return databaseTarget{}, errors.New(message)
 	}
-
-	// Parse and validate the URL before connecting.
-	u, err := url.Parse(testURL)
+	u, err := url.Parse(raw)
 	if err != nil {
-		t.Fatalf("Invalid TEST_DATABASE_URL %q: %v", testURL, err)
+		return invalid("malformed PostgreSQL URL")
 	}
-	if u.Scheme != "postgres" {
-		t.Fatalf("TEST_DATABASE_URL must use postgres scheme, got %q", u.Scheme)
+	if u.Scheme != "postgres" || u.Opaque != "" || strings.Contains(raw, "#") {
+		return invalid("use a postgres:// URL without an opaque path or fragment")
 	}
-
-	// Only allow sslmode and connect_timeout as query options.
-	q := u.Query()
-	allowed := map[string]bool{"sslmode": true, "connect_timeout": true}
-	for k := range q {
-		if !allowed[k] {
-			t.Fatalf("TEST_DATABASE_URL contains disallowed query option %q; only sslmode and connect_timeout are permitted", k)
-		}
-	}
-
-	// Validate host: must be loopback.
 	host := u.Hostname()
 	if host != "127.0.0.1" && host != "localhost" {
-		t.Fatalf("TEST_DATABASE_URL host must be 127.0.0.1 or localhost for test isolation, got %q", host)
+		return invalid("host must be explicitly localhost or 127.0.0.1")
 	}
-
-	// Validate database name: must be alignify_test or alignify_test_<suffix>.
-	dbName := u.Path
-	if dbName == "" || dbName == "/" {
-		t.Fatalf("TEST_DATABASE_URL must include a database name")
+	port := u.Port()
+	if port == "" {
+		if u.Host != host {
+			return invalid("port must be an integer from 1 to 65535")
+		}
+		// Do not inherit an unrelated PGPORT from the caller's environment.
+		u.Host = host + ":5432"
+	} else {
+		n, err := strconv.ParseUint(port, 10, 16)
+		if err != nil || n == 0 || u.Host != host+":"+port {
+			return invalid("port must be an integer from 1 to 65535")
+		}
 	}
-	// Remove leading slash.
-	if strings.HasPrefix(dbName, "/") {
-		dbName = strings.TrimPrefix(dbName, "/")
+	if u.User != nil {
+		password, _ := u.User.Password()
+		if strings.ContainsRune(u.User.Username(), '\x00') || strings.ContainsRune(password, '\x00') {
+			return invalid("credentials must not contain NUL characters")
+		}
 	}
-	if !regexp.MustCompile(`^alignify_test(_[a-zA-Z0-9_-]+)?$`).MatchString(dbName) {
-		t.Fatalf("TEST_DATABASE_URL database must be alignify_test or alignify_test_<suffix> for test isolation, got %q", dbName)
+	if !strings.HasPrefix(u.Path, "/") {
+		return invalid("an explicit test database path is required")
 	}
-
-	// Build a connection string with search_path set to a unique schema.
-	// We'll create the schema after opening a bootstrap connection.
-	// We need to quote the schema name to be safe.
-	schema := fmt.Sprintf(`"%s_%d"`, dbName, time.Now().UnixNano())
-	// Build base connection string without search_path; we'll add it via params.
-	baseU := *u
-	// Remove the path (database) temporarily to avoid duplication in dsn.
-	baseU.Path = ""
-	qs := baseU.Query()
-	// Delete any existing search_path to avoid confusion.
-	qs.Del("search_path")
-	// Add our required options.
-	qs.Set("sslmode", u.Query().Get("sslmode"))
-	if ct := u.Query().Get("connect_timeout"); ct != "" {
-		qs.Set("connect_timeout", ct)
+	database := strings.TrimPrefix(u.Path, "/")
+	if len(database) > 63 || !testDatabaseName.MatchString(database) {
+		return invalid("database must be alignify_test or alignify_test_<suffix>, at most 63 characters")
 	}
-	baseU.RawQuery = qs.Encode()
-	// The final DSN will be built per connection with options including search_path.
-
-	// Bootstrap connection to create schema and configure pool.
-	// We use a temporary connection to create the schema and verify connectivity.
-	bootstrapURL := baseU.String() + "&dbname=" + url.QueryEscape(dbName)
-	bootstrap, err := sql.Open("postgres", bootstrapURL)
+	q, err := url.ParseQuery(u.RawQuery)
 	if err != nil {
-		t.Fatalf("Failed to open bootstrap connection to test database: %v", err)
+		return invalid("malformed query options")
 	}
-	defer bootstrap.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err = bootstrap.PingContext(ctx); err != nil {
-		t.Fatalf("Test database unreachable: %v", err)
-	}
-
-	// Create the isolated schema.
-	if _, err = bootstrap.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
-		t.Fatalf("Failed to create test schema %s: %v", schema, err)
-	}
-
-	// Verify we are in the right database.
-	var currentDB string
-	if err = bootstrap.QueryRowContext(ctx, `SELECT current_database()`).Scan(&currentDB); err != nil {
-		t.Fatalf("Failed to read current_database(): %v", err)
-	}
-	if currentDB != dbName {
-		t.Fatalf("Connected to database %q, expected %q", currentDB, dbName)
-	}
-
-	// Configure the test pool with search_path set to our schema (no public fallback).
-	testU := baseU
-	testU.Path = "/" + dbName
-	q = testU.Query()
-	q.Set("search_path", schema)
-	testU.RawQuery = q.Encode()
-
-	// Open the storage pool with the configured URL.
-	store, err := postgres.NewPostgresStorage(testU.String())
-	if err != nil {
-		t.Fatalf("Failed to initialize isolated PostgreSQL storage: %v", err)
-	}
-
-	// Register cleanup: close pool, drop only our schema, then close bootstrap.
-	t.Cleanup(func() {
-		// Close the test pool first.
-		if cerr := store.Close(); cerr != nil {
-			t.Errorf("Error closing test storage pool: %v", cerr)
+	for key, values := range q {
+		if len(values) != 1 {
+			return invalid("duplicate query options are not permitted")
 		}
-		// Drop the schema we created.
-		if _, derr := bootstrap.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+schema+` CASCADE`); derr != nil {
-			t.Errorf("Error dropping test schema %s: %v", schema, derr)
+		switch key {
+		case "sslmode":
+			switch values[0] {
+			case "disable", "require", "verify-ca", "verify-full":
+			default:
+				return invalid("sslmode must be disable, require, verify-ca, or verify-full")
+			}
+		case "connect_timeout":
+			seconds, err := strconv.ParseUint(values[0], 10, 8)
+			if err != nil || seconds < 1 || seconds > 30 {
+				return invalid("connect_timeout must be an integer from 1 to 30 seconds")
+			}
+		default:
+			return invalid("only sslmode and connect_timeout query options are permitted")
 		}
-		// Finally close the bootstrap connection.
-		if berr := bootstrap.Close(); berr != nil {
-			t.Errorf("Error closing bootstrap connection: %v", berr)
-		}
+	}
+	if !q.Has("sslmode") {
+		q.Set("sslmode", "require")
+	}
+	if !q.Has("connect_timeout") {
+		q.Set("connect_timeout", "5")
+	}
+	// Preserve the validated database in the path; never append a second dbname.
+	u.RawPath = ""
+	u.RawQuery = q.Encode()
+	return databaseTarget{url: *u, database: database}, nil
+}
+
+func (target databaseTarget) schemaDSN(schema string) string {
+	u := target.url
+	q := u.Query()
+	q.Set("search_path", pq.QuoteIdentifier(schema))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func newSchemaName() (string, error) {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", errors.New("could not generate an isolated schema name")
+	}
+	// Independent of the database name, and well below PostgreSQL's 63-byte limit.
+	return "alignify_it_" + hex.EncodeToString(random[:]), nil
+}
+
+// Open returns an unmigrated PostgreSQL store in a unique, quoted schema.
+// Only TEST_DATABASE_URL is read: absence skips; an invalid or unreachable
+// explicit target fails. The URL must use postgres://, localhost or 127.0.0.1,
+// and alignify_test or alignify_test_<suffix> (at most 63 characters). Only
+// sslmode and connect_timeout (1-30 seconds; default 5) options are accepted.
+// An omitted port defaults to 5432 and omitted sslmode defaults to require.
+//
+// Every connection in the pool has the same exclusive schema search_path, with
+// no public fallback. Test cleanup closes the store, drops only its schema,
+// then closes the bootstrap pool. Callers may close the store earlier, but
+// store.Close alone does not remove the schema: the test cleanup owns it.
+func Open(t testing.TB) *storage.PostgresStorage {
+	t.Helper()
+	return open(t, func(t reporter, target databaseTarget) (*storage.PostgresStorage, error) {
+		return establish(t, target, storage.NewPostgresStorage)
 	})
+}
 
+func open(t reporter, connect func(reporter, databaseTarget) (*storage.PostgresStorage, error)) *storage.PostgresStorage {
+	t.Helper()
+	raw := os.Getenv("TEST_DATABASE_URL")
+	if raw == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping PostgreSQL integration test. Supply an explicit disposable local test database to opt in.")
+		return nil
+	}
+	target, err := validateURL(raw)
+	if err != nil {
+		// Only the pure validator's fixed diagnostics are safe to report.
+		t.Fatalf("Invalid TEST_DATABASE_URL: %s", err)
+		return nil
+	}
+	store, err := connect(t, target)
+	if err != nil || store == nil {
+		// Connector errors can include credentials, URLs, or server-supplied text.
+		t.Fatalf("Failed to initialize isolated PostgreSQL test storage; check TEST_DATABASE_URL connectivity and schema permissions")
+		return nil
+	}
 	return store
 }
 
+// establish returns setup errors instead of terminating the test. Cleanup is
+// registered as resources are acquired, including on partial initialization.
+// openStore is injectable to exercise failure after the schema has been created.
+func establish(t reporter, target databaseTarget, openStore func(string) (*storage.PostgresStorage, error)) (*storage.PostgresStorage, error) {
+	schema, err := newSchemaName()
+	if err != nil {
+		return nil, err
+	}
+	bootstrap, err := sql.Open("postgres", target.url.String())
+	if err != nil {
+		return nil, errors.New("could not open test database bootstrap pool")
+	}
+	t.Cleanup(func() {
+		if err := bootstrap.Close(); err != nil {
+			t.Errorf("Failed to close test database bootstrap pool")
+		}
+	})
+	bootstrap.SetMaxOpenConns(1)
+	bootstrap.SetMaxIdleConns(1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+	var database string
+	if err := bootstrap.QueryRowContext(ctx, `SELECT pg_catalog.current_database()`).Scan(&database); err != nil {
+		return nil, errors.New("could not verify test database connection")
+	}
+	if database != target.database {
+		return nil, errors.New("test database connection selected an unexpected database")
+	}
+
+	// A transaction handles a CREATE whose response is lost: rollback prevents
+	// an orphan schema. Register DROP after successful CREATE but before COMMIT,
+	// covering an ambiguous commit without ever dropping a pre-existing schema.
+	tx, err := bootstrap.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, errors.New("could not begin isolated schema creation")
+	}
+	defer tx.Rollback()
+	quotedSchema := pq.QuoteIdentifier(schema)
+	if _, err := tx.ExecContext(ctx, `CREATE SCHEMA `+quotedSchema); err != nil {
+		return nil, errors.New("could not create isolated test schema")
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), queryTimeout)
+		defer cleanupCancel()
+		if _, err := bootstrap.ExecContext(cleanupCtx, `DROP SCHEMA IF EXISTS `+quotedSchema+` CASCADE`); err != nil {
+			t.Errorf("Failed to drop owned test schema")
+		}
+	})
+	if err := tx.Commit(); err != nil {
+		return nil, errors.New("could not commit isolated schema creation")
+	}
+
+	store, err := openStore(target.schemaDSN(schema))
+	if store != nil {
+		t.Cleanup(func() {
+			if err := store.Close(); err != nil {
+				t.Errorf("Failed to close isolated PostgreSQL test storage")
+			}
+		})
+	}
+	if err != nil || store == nil || store.DB() == nil {
+		return nil, errors.New("could not open isolated PostgreSQL test storage")
+	}
+	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer verifyCancel()
+	var currentSchema, searchPath string
+	if err := store.DB().QueryRowContext(verifyCtx, `
+		SELECT pg_catalog.current_database(), pg_catalog.current_schema(), pg_catalog.current_setting('search_path')
+	`).Scan(&database, &currentSchema, &searchPath); err != nil {
+		return nil, errors.New("could not verify isolated PostgreSQL test storage")
+	}
+	if database != target.database || currentSchema != schema || searchPath != quotedSchema {
+		return nil, errors.New("isolated test storage selected an unexpected database or search path")
+	}
+	return store, nil
+}
+
 // MigrationsDir returns the absolute path to the migration directory.
-// It panics if the directory is missing or unreadable.
+// It fails the test if the directory is missing or unreadable.
 func MigrationsDir(t testing.TB) string {
 	t.Helper()
 	migDir := "../../migrations"
@@ -191,13 +274,16 @@ func MigrationsDir(t testing.TB) string {
 	return absMigDir
 }
 
-// RequireRollback must be called before running the destructive migration-cycle test.
-// It checks for TEST_DATABASE_ALLOW_ROLLBACK=1; if not set, it skips the test with an explanation.
-// This opt-in never bypasses the target validation in Open.
+// RequireRollback must be called before setting up destructive migration tests.
+// It requires TEST_DATABASE_ALLOW_ROLLBACK=1; this never bypasses Open validation.
 func RequireRollback(t testing.TB) {
 	t.Helper()
+	requireRollback(t)
+}
+
+func requireRollback(t reporter) {
+	t.Helper()
 	if os.Getenv("TEST_DATABASE_ALLOW_ROLLBACK") != "1" {
-		t.Skip("TEST_DATABASE_ALLOW_ROLLBACK not set; skipping destructive migration-cycle test. " +
-			"Set it to 1 to opt in to rollback execution.")
+		t.Skip("TEST_DATABASE_ALLOW_ROLLBACK must be 1; skipping destructive migration-cycle test. Set it to 1 to opt in to rollback execution.")
 	}
 }

@@ -1,6 +1,9 @@
 # Alignify Phase 5 — Reliability & Performance Audit Report
 
-**Document Status:** Production Ready (Monday Launch Target)  
+**Document Status:** Historical report — current performance/readiness unverified
+
+> **Current-status notice (2026-10-15):** The benchmarks and readiness assertions below have not been re-established for the current revision. Offline Go checks do not validate these measurements or production recovery. Consult [BASELINE.md](BASELINE.md) for current evidence and pending gates; no new benchmark or deployment approval is claimed here.
+
 **Date:** October 9, 2026  
 **Auditor:** Principal Performance & Systems Reliability Engineer  
 **Scope:** Alignify Frontend Web Bundle, Go Collaboration Engine, Postgres Storage Layer, AI Pipeline

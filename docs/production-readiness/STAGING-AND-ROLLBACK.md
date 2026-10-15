@@ -58,7 +58,7 @@ From the repository root in Bash/Git Bash:
 
 ```bash
 (
-  container_id=$(docker run --rm --detach \
+  container_id=$(MSYS_NO_PATHCONV=1 docker run --rm --detach \
     --publish 127.0.0.1:55432:5432 \
     --tmpfs /var/lib/postgresql/data:rw \
     --env POSTGRES_DB=alignify_test \
