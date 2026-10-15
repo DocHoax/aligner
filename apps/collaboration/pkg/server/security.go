@@ -50,6 +50,12 @@ func DefaultServerConfig() ServerConfig {
 	}
 }
 
+// IsProductionLike returns true if the environment is production or staging.
+func (cfg ServerConfig) IsProductionLike() bool {
+	return cfg.Environment == "production" || cfg.Environment == "staging"
+}
+
+// isProductionLike is the unexported version kept for internal use only.
 func (cfg ServerConfig) isProductionLike() bool {
 	return cfg.Environment == "production" || cfg.Environment == "staging"
 }
