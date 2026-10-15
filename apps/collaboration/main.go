@@ -25,7 +25,7 @@ func prepareServer() (*http.Server, storage.Storage, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
-	isProdLike := cfg.isProductionLike()
+	isProdLike := cfg.IsProductionLike()
 
 	// 2. Handle PORT
 	port := os.Getenv("PORT")
