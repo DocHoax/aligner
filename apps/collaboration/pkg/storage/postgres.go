@@ -18,7 +18,8 @@ import (
 )
 
 type PostgresStorage struct {
-	db *sql.DB
+	db      *sql.DB
+	schema  string // isolated test schema name (quoted)
 }
 
 func NewPostgresStorage(connStr string) (*PostgresStorage, error) {
