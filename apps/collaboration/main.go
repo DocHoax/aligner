@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -66,33 +66,23 @@ func prepareServer() (*http.Server, storage.Storage, error) {
 			store = pgStore
 
 			// 5. Validate and run migrations
-			migDir := findMigrationsDir()
-			if migDir == "" {
-				return nil, nil, errors.New("migrations directory not found")
-			}
-
-			// Check if migration directory contains SQL files
-			files, err := os.ReadDir(migDir)
+			migDir, err := resolveMigrationsDir()
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to read migrations directory %s: %w", migDir, err)
-			}
-
-			var sqlFiles []string
-			for _, f := range files {
-				if !f.IsDir() && strings.HasSuffix(f.Name(), ".sql") {
-					sqlFiles = append(sqlFiles, f.Name())
+				// Close storage on migration resolution failure
+				if pgStore != nil {
+					pgStore.Close()
 				}
-			}
-			if len(sqlFiles) == 0 {
-				return nil, nil, fmt.Errorf("no SQL migration files found in %s", migDir)
+				return nil, nil, fmt.Errorf("failed to resolve migration directory: %w", err)
 			}
 
-			// Run migrations
-			log.Printf("[Storage] Running database migrations from %s ...", migDir)
+			// Run migrations (validates inventory internally)
 			if err := pgStore.RunMigrations(migDir); err != nil {
+				// Close storage on migration failure
+				if pgStore != nil {
+					pgStore.Close()
+				}
 				return nil, nil, fmt.Errorf("failed to run database migrations: %w", err)
 			}
-			log.Printf("[Storage] Database migrations applied successfully.")
 		}
 	} else {
 		// No DATABASE_URL specified - use memory storage (only allowed in development/test)
@@ -103,10 +93,14 @@ func prepareServer() (*http.Server, storage.Storage, error) {
 		store = storage.NewMemoryStorage()
 	}
 
-	// 6. Create server
+	// 6. Create server with validated config
 	hub := rooms.NewHub(store)
-	srv, err := server.NewServer(hub, store)
+	srv, err := server.NewServerWithConfig(hub, cfg, store)
 	if err != nil {
+		// Close storage on server construction failure
+		if pgStore != nil {
+			pgStore.Close()
+		}
 		return nil, nil, fmt.Errorf("failed to initialize server: %w", err)
 	}
 
@@ -183,4 +177,30 @@ func main() {
 
 		log.Printf("Alignify Collaboration Server stopped cleanly.")
 	}
+}
+
+// resolveMigrationsDir resolves the migration directory for the current execution context.
+// It checks for migrations in the module-relative path first, then falls back to the repository root.
+// It returns an error if the directory is missing or unreadable.
+func resolveMigrationsDir() (string, error) {
+	// Check for migrations in the module-relative path (when running from module directory)
+	migDir := "../../migrations"
+	if _, err := os.Stat(migDir); err == nil {
+		return migDir, nil
+	}
+
+	// Fall back to repository root path (when running from repository root)
+	migDir = "../../../apps/collaboration/migrations"
+	if _, err := os.Stat(migDir); err != nil {
+		return "", fmt.Errorf("migrations directory not found")
+	}
+
+	fi, err := os.Stat(migDir)
+	if err != nil {
+		return "", fmt.Errorf("migrations directory %s is unreadable: %w", migDir, err)
+	}
+	if !fi.IsDir() {
+		return "", fmt.Errorf("migration path %s is not a directory", migDir)
+	}
+	return migDir, nil
 }
