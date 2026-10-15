@@ -79,7 +79,7 @@ func runOpen(env map[string]string, connect func(reporter, databaseTarget) (*sto
 	defer func() {
 		outcome = recover()
 	}()
-	store, _ = open(r, connect).(*storage.PostgresStorage)
+	store = open(r, connect)
 	return store, r, outcome
 }
 
