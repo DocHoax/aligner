@@ -64,7 +64,7 @@ func NewServerWithConfig(hub *rooms.Hub, cfg ServerConfig, stores ...storage.Sto
 		store = stores[0]
 	} else if hub != nil && hub.Storage() != nil {
 		store = hub.Storage()
-	} else if cfg.isProductionLike() {
+	} else if cfg.IsProductionLike() {
 		return nil, errors.New("storage is required in production/staging")
 	} else {
 		store = storage.NewMemoryStorage()
@@ -77,7 +77,7 @@ func NewServerWithConfig(hub *rooms.Hub, cfg ServerConfig, stores ...storage.Sto
 	authMw := auth.NewAuthMiddleware(jwtManager)
 	ticketStore := auth.NewTicketStore(60 * time.Second)
 
-	isProd := cfg.isProductionLike()
+	isProd := cfg.IsProductionLike()
 	wsUpgrader := websocket.Upgrader{
 		ReadBufferSize:  1024 * 1024,
 		WriteBufferSize: 1024 * 1024,
@@ -148,7 +148,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
 	// Security & Observability Pipeline
-	isProd := s.config.Environment == "production" || s.config.Environment == "staging"
+	isProd := s.config.IsProductionLike()
 	var handler http.Handler = mux
 
 	if s.config.EnableRateLimiting {
