@@ -360,7 +360,9 @@ func TestOpen_Integration_CrossSchemaIsolation(t *testing.T) {
 		t.Fatalf("second store unexpectedly saw the first store's table")
 	} else {
 		var isUndefinedTable bool
-		if strings.Contains(err.Error(), "does not exist") || pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42P01" {
+		if strings.Contains(err.Error(), "does not exist") {
+			isUndefinedTable = true
+		} else if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "42P01" {
 			isUndefinedTable = true
 		}
 		if !isUndefinedTable {
