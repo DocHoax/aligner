@@ -234,6 +234,8 @@ func establish(t reporter, target databaseTarget, openStore func(string) (*stora
 				t.Errorf("Failed to close isolated PostgreSQL test storage")
 			}
 		})
+		// Store the schema name on the PostgresStorage for SchemaDSNForTest access
+		store.schema = schema
 	}
 	if err != nil || store == nil || store.DB() == nil {
 		return nil, errors.New("could not open isolated PostgreSQL test storage")

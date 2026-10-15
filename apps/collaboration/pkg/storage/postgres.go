@@ -19,7 +19,7 @@ import (
 
 type PostgresStorage struct {
 	db      *sql.DB
-	schema  string // isolated test schema name (quoted)
+	Schema  string // isolated test schema name (quoted), set during establishment
 }
 
 func NewPostgresStorage(connStr string) (*PostgresStorage, error) {
@@ -86,6 +86,7 @@ func (p *PostgresStorage) Close() error {
 	}
 	return nil
 }
+
 
 func (p *PostgresStorage) RunMigrations(migrationsDir string) error {
 	ctx := context.Background()
