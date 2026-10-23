@@ -5,9 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
-	"time"
 
 	"alignify/collaboration/pkg/rooms"
 	"alignify/collaboration/pkg/server"
@@ -70,8 +68,8 @@ func TestMemoryServer_ReadyzWithMemory(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&data); err != nil {
 		t.Fatalf("failed to decode health response: %v", err)
 	}
-	if data["status"] != "ok" {
-		t.Fatalf("expected status 'ok', got %v", data["status"])
+	if data["status"] != "ready" {
+		t.Fatalf("expected status 'ready', got %v", data["status"])
 	}
 	if data["storage"] != "ok" {
 		t.Fatalf("expected storage 'ok', got %v", data["storage"])
@@ -172,7 +170,9 @@ func TestConfiguration_BlankEnvFallsBackToDevelopment(t *testing.T) {
 
 func TestConfiguration_WhitespaceNormalization(t *testing.T) {
 	os.Setenv("ENVIRONMENT", "  production  ")
+	os.Setenv("JWT_SECRET", "super-secret-secure-production-jwt-token-key-2026-launch")
 	defer os.Unsetenv("ENVIRONMENT")
+	defer os.Unsetenv("JWT_SECRET")
 
 	cfg, err := server.LoadServerConfigFromEnv()
 	if err != nil {

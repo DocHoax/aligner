@@ -1073,10 +1073,15 @@ export class AiAssistantDialogComponent implements OnInit {
     const code = this.aiService.lastMermaidCode();
     if (!code) return;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(code).then(() => {
-        this.mermaidCopied.set(true);
-        setTimeout(() => this.mermaidCopied.set(false), 2000);
-      });
+      navigator.clipboard
+        .writeText(code)
+        .then(() => {
+          this.mermaidCopied.set(true);
+          setTimeout(() => this.mermaidCopied.set(false), 2000);
+        })
+        .catch(() => {
+          this.mermaidCopied.set(false);
+        });
     }
   }
 

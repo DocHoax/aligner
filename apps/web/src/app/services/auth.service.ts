@@ -65,7 +65,7 @@ export class AuthService {
         .subscribe({ error: () => {} });
     }
     this.clearSession();
-    this.router.navigate(['/login']);
+    void this.router.navigate(['/login']);
   }
 
   getMe(): Observable<{ user: User; workspaces: Workspace[] }> {

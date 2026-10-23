@@ -187,12 +187,12 @@ export class CommandPaletteComponent implements OnInit, OnDestroy {
     { id: 'ai-mermaid', category: 'AI Assistant', label: 'AI Mermaid Flowchart Import / Export', action: () => this.toggleAiAssistant.emit() },
 
     // Export
-    { id: 'export-png', category: 'Export', label: 'Export High-Resolution PNG', action: () => this.bridge.exportPNG() },
+    { id: 'export-png', category: 'Export', label: 'Export High-Resolution PNG', action: () => { void this.bridge.exportPNG(); } },
     { id: 'export-svg', category: 'Export', label: 'Export Vector SVG', action: () => this.bridge.exportSVG() },
     { id: 'export-json', category: 'Export', label: 'Export Alignify Document JSON', action: () => this.bridge.exportJSON() },
 
     // Navigation
-    { id: 'nav-workspaces', category: 'Navigation', label: 'Go to Workspaces Dashboard', action: () => this.router.navigate(['/workspaces']) }
+    { id: 'nav-workspaces', category: 'Navigation', label: 'Go to Workspaces Dashboard', action: () => { void this.router.navigate(['/workspaces']); } }
   ];
 
   readonly filteredCommands = computed(() => {

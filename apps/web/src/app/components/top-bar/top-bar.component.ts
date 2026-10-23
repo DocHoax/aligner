@@ -515,7 +515,7 @@ export class TopBarComponent {
   }
 
   exportPNG(): void {
-    this.bridge.exportPNG();
+    void this.bridge.exportPNG();
     this.isExportMenuOpen.set(false);
   }
 

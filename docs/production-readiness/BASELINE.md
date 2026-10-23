@@ -1,11 +1,15 @@
 # Alignify Production Readiness Baseline
 
-**Status:** IMPLEMENTATION IN PROGRESS — not a release approval  
-**Updated:** 2026-10-15
+**Status:** BASELINE REPAIRED — not a release approval
+
+**Updated:** 2026-10-23
 
 ## Purpose
 
-Track reproducible evidence for local safety gates separately from database integration, deployment, and operational readiness. The current increment repairs Go startup preparation and the PostgreSQL test harness. Historical security/performance reports are not evidence that this revision is ready for production.
+Track reproducible evidence for local safety gates separately from deployment and
+operational readiness. The current increment repairs Go test-harness compilation,
+PostgreSQL integration coverage, and the ESLint gate. Historical security/performance
+reports are not evidence that this revision is ready for production.
 
 ## Gate contracts
 
@@ -32,24 +36,63 @@ Forward migration validates the entire nonempty SQL inventory before database me
 
 ## Verification status
 
+Evidence recorded 2026-10-23 on Windows with Go 1.27.1, Node 24.19.0, and PostgreSQL 16 in a
+disposable local cluster. No application or production database was contacted.
+
 | Gate | Evidence for the current working tree |
 |---|---|
-| Go build and vet | Pending execution after implementation |
-| Offline startup/configuration/helper/inventory regression tests | Pending execution after the database-path safety audit |
-| Full Go suite without PostgreSQL | Pending; database-dependent skips will be reported separately |
-| PostgreSQL isolation, cleanup, migration/rollback/reapply, API/WebSocket integration | Pending disposable PostgreSQL 16 infrastructure |
-| JavaScript/Angular lint, tests, typechecking, production build | Not executed by this Go-focused increment |
+| Go build and vet | Passed: `go build ./...`, `go vet ./...` (exit 0) |
+| Offline Go suite | Passed: `go test -count=1 ./...` with no `TEST_DATABASE_URL`; 75 tests passed, 10 PostgreSQL/rollback tests skipped |
+| PostgreSQL-backed Go suite | Passed: `go test -count=1 ./...` against a disposable PostgreSQL 16 cluster; 85 tests passed, 0 skipped, 0 failed |
+| Schema and data isolation | Passed: two stores use distinct quoted schemas; every pooled connection uses its exclusive `search_path`; zero `alignify_it_%` schemas and zero `public` tables remained after the suite |
+| Migration, rollback, reapply | Passed: `TestPostgresStorage_MigrationAndRollbackCycle`, metadata bootstrap, malformed metadata, closed-pool, and invalid-inventory tests |
+| Snapshot recovery and sequencing | Passed: compaction every 50 operations, reconnect catch-up from snapshot plus deltas, monotonic sequence/ack flow, multi-client jitter, and live end-to-end integration |
+| JavaScript/Angular typecheck | Passed: `npm run typecheck` (all three build tsconfigs) |
+| Package and frontend tests | Passed: 51 package tests and 28 Angular tests |
+| ESLint | Passed: `npm run lint` with `--max-warnings=0`; configuration and deferred strict rules documented in [LINT-BASELINE.md](LINT-BASELINE.md) |
+| Production build | Passed: `npm run build` (packages plus Angular production bundle) |
 | Browser E2E, deployment, operational recovery, performance, organizational approval | Not established; outside this increment |
 
-Do not change a row to passed based on source inspection, the existence of a test, historical caches, or a successful run that skipped its required infrastructure.
+Do not change a row to passed based on source inspection, the existence of a test, historical caches, or a successful run that skipped its required infrastructure. Rows above record commands that were executed; skipped database coverage is called out separately.
 
-## Reproduce local Go checks
+## Reproduce local checks
 
-Use Go 1.26 or newer (the module declares 1.26). From the repository root in Bash/Git Bash, run the bounded sequence in [STAGING-AND-ROLLBACK.md](STAGING-AND-ROLLBACK.md#local-go-verification-no-postgresql).
+From the repository root:
 
-The sequence clears application/test database variables, uses local cached dependencies without modifying module files, and runs build, vet, focused tests, then the complete suite. Missing cached dependencies are a prerequisite failure, not a reason to claim success or silently change dependencies. Database-dependent tests must explicitly skip while offline tests actually execute.
+```bash
+npm run typecheck
+npm run test:packages
+npm --workspace=apps/web run test:ci
+npm run lint
+npm run build
 
-JavaScript verification remains a separate gate. Its existing commands are `npm run build:packages`, `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build`, after dependencies have been intentionally provisioned. Build packages before typechecking; existing generated output must not be mistaken for clean-checkout reproducibility.
+cd apps/collaboration
+go build ./...
+go vet ./...
+go test -count=1 ./...          # offline: database tests skip
+```
+
+For PostgreSQL-backed verification, create a **disposable** cluster (do not use an
+application database) and run:
+
+```bash
+export TEST_DATABASE_URL='postgres://postgres@127.0.0.1:55432/alignify_test?sslmode=disable&connect_timeout=5'
+export TEST_DATABASE_ALLOW_ROLLBACK=1
+unset DATABASE_URL
+cd apps/collaboration && go test -count=1 ./...
+```
+
+The test helper requires a localhost `postgres://` URL whose database is `alignify_test` or
+`alignify_test_<suffix>`, creates a unique schema per store, and drops it during cleanup.
+Verify cleanup afterwards:
+
+```sql
+SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'alignify_it_%';
+SELECT count(*) FROM pg_tables WHERE schemaname = 'public';
+```
+
+Both counts must be zero. The disposable cluster used for this evidence was removed after
+verification.
 
 ## Database rehearsal and evidence
 
@@ -64,11 +107,16 @@ Record:
 
 ### Current environment observation
 
-Planning observed Go `go1.27.1 windows/amd64`. Docker CLI was available, but its Linux daemon was unavailable; no `psql` executable was found. This is an environment observation, not build/test evidence. PostgreSQL-backed verification remains pending unless that prerequisite changes through an approved operator action.
+Go `go1.27.1 windows/amd64`, Node `v24.19.0`, and PostgreSQL 16 binaries were available. The
+Docker daemon was unavailable, so a trust-authenticated disposable cluster was created with
+the installed PostgreSQL 16 binaries on port 55432, not the system service on port 5432. It
+was stopped and deleted after the suite.
 
 ## Next steps
 
-1. Finish the startup and test-harness repairs and inspect all database-test entry points before running tests.
-2. Execute the local Go gate and record actual results; surface unrelated failures without weakening tests.
-3. Perform the disposable PostgreSQL rehearsal when approved infrastructure is available.
-4. Address frontend/lint and operational gates separately. No current result implies release approval.
+1. Keep the runnable gates green and record any new skips rather than silent passes.
+2. Reduce the deferred strict-rule debt described in [LINT-BASELINE.md](LINT-BASELINE.md)
+   incrementally, starting with new or substantially modified files.
+3. Repeat disposable PostgreSQL verification after schema, migration, or persistence changes.
+4. Address browser E2E, deployment, and operational gates separately. No current result
+   implies release approval.

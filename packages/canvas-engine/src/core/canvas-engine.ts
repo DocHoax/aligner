@@ -480,7 +480,7 @@ export class CanvasEngine {
     this.currentDocumentMeta.name = name;
     this.currentDocumentMeta.updatedAt = Date.now();
     this.eventBus.emit('document_changed', this.currentDocumentMeta);
-    this.saveDocument();
+    this.saveDocument().catch((e) => console.warn('[CanvasEngine] Save document error', e));
   }
 
   // --- Subsystem Event Coordination ---

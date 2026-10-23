@@ -176,10 +176,15 @@ export class ShareDialogComponent implements OnInit {
 
   copyLink(): void {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(this.shareUrl).then(() => {
-        this.copied.set(true);
-        setTimeout(() => this.copied.set(false), 2000);
-      });
+      navigator.clipboard
+        .writeText(this.shareUrl)
+        .then(() => {
+          this.copied.set(true);
+          setTimeout(() => this.copied.set(false), 2000);
+        })
+        .catch(() => {
+          this.copied.set(false);
+        });
     }
   }
 

@@ -19,13 +19,14 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p packages/canvas-engine/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.app.json"
   },
   "devDependencies": {
-    "typescript": "^5.7.3",
-    "vitest": "^3.0.7",
-    "@types/node": "^22.13.5",
-    "eslint": "^9.0.0",
-    "@typescript-eslint/parser": "^8.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@angular-eslint/eslint-plugin": "^19.0.0",
-    "@angular-eslint/template-parser": "^19.0.0"
+    "@angular-eslint/eslint-plugin-template": "^19.8.1",
+    "@angular-eslint/template-parser": "^19.0.0",
+    "@types/node": "^22.13.5",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
   }
 }

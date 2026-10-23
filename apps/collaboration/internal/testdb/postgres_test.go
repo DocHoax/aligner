@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -60,15 +61,31 @@ type skipSentinel struct{ args []any }
 
 // runOpen executes open() against a recording reporter and recovers the fatal
 // and skip sentinels so the real test runner is never aborted. The registered
-// cleanups run in reverse order, mirroring testing.TB.Cleanup.
+// cleanups run in reverse order, mirroring testing.TB.Cleanup. Relevant
+// environment variables are isolated for the duration of the call and restored
+// afterwards so a developer-supplied TEST_DATABASE_URL is never consumed by a
+// unit test or destroyed for later integration tests.
 func runOpen(env map[string]string, connect func(reporter, databaseTarget) (*storage.PostgresStorage, error)) (store *storage.PostgresStorage, r *recordingReporter, outcome any) {
 	r = &recordingReporter{}
+	isolated := []string{"TEST_DATABASE_URL", "TEST_DATABASE_ALLOW_ROLLBACK"}
+	previous := make(map[string]string, len(isolated))
+	present := make(map[string]bool, len(isolated))
+	for _, key := range isolated {
+		value, ok := os.LookupEnv(key)
+		previous[key] = value
+		present[key] = ok
+		os.Unsetenv(key)
+	}
 	for key, value := range env {
 		os.Setenv(key, value)
 	}
 	defer func() {
-		for _, key := range env {
-			os.Unsetenv(key)
+		for _, key := range isolated {
+			if present[key] {
+				os.Setenv(key, previous[key])
+			} else {
+				os.Unsetenv(key)
+			}
 		}
 	}()
 	defer func() {
@@ -156,7 +173,7 @@ func TestOpen_ConnectFailureFailsAndReportsSafely(t *testing.T) {
 
 func TestRequireRollback_Offline(t *testing.T) {
 	r := &recordingReporter{}
-	os.Unsetenv("TEST_DATABASE_ALLOW_ROLLBACK")
+	t.Setenv("TEST_DATABASE_ALLOW_ROLLBACK", "")
 	func() {
 		defer func() {
 			if outcome := recover(); outcome != nil {
@@ -172,8 +189,7 @@ func TestRequireRollback_Offline(t *testing.T) {
 	}
 
 	r2 := &recordingReporter{}
-	os.Setenv("TEST_DATABASE_ALLOW_ROLLBACK", "1")
-	defer os.Unsetenv("TEST_DATABASE_ALLOW_ROLLBACK")
+	t.Setenv("TEST_DATABASE_ALLOW_ROLLBACK", "1")
 	requireRollback(r2)
 	if r2.skipped {
 		t.Fatalf("requireRollback should not skip when TEST_DATABASE_ALLOW_ROLLBACK is 1")
@@ -219,7 +235,7 @@ func TestValidateURL_NeverConnects(t *testing.T) {
 		"dupp":     {"postgres://testuser:testpass@127.0.0.1:5432/alignify_test?sslmode=disable&connect_timeout=5&connect_timeout=4"},
 		"opt":      {"postgres://testuser:testpass@127.0.0.1:5432/alignify_test?sslmode=disable&options=-c+search_path%3Dpublic"},
 		"sslhost":  {"postgres://testuser:testpass@127.0.0.1:5432/alignify_test?sslmode=disable&host=localhost"},
-		"to":       {"postgres://testuser:testpass@127.0.0.1:5432/alignify_test?connect_timeout=15"},
+		"to":       {"postgres://testuser:testpass@127.0.0.1:5432/alignify_test?sslmode=disable&connect_timeout=-1"},
 		"box":      {"postgres://testuser:testpass@127.0.0.1:5432/alignify_test?sslmode=disable&timeout=5"},
 		"zerot":    {"postgres://testuser:testpass@127.0.0.1:5432/alignify_test?connect_timeout=0"},
 		"badt":     {"postgres://testuser:testpass@127.0.0.1:5432/alignify_test?connect_timeout=abc"},
@@ -263,7 +279,7 @@ func TestValidateURL_RedactsCredentials(t *testing.T) {
 		if err == nil {
 			t.Fatalf("validateURL(%q) unexpectedly accepted the URL", raw)
 		}
-		for _, needle := range []string{"supersecret", "example.com", "secret", "value", "alignify", "invalid"} {
+		for _, needle := range []string{"supersecret", "example.com", "secret", "value", "invalid"} {
 			if strings.Contains(err.Error(), needle) {
 				t.Errorf("validateURL(%q) leaked %q in error: %v", raw, needle, err)
 			}
@@ -340,7 +356,7 @@ func TestOpen_Integration_SearchPathIsExclusiveOnEveryPoolConnection(t *testing.
 		if err != nil {
 			t.Fatalf("concurrent pool query failed: %v", err)
 		}
-		if searchPath != schema {
+		if searchPath != pq.QuoteIdentifier(schema) {
 			t.Fatalf("expected every pooled connection to use its exclusive search_path, got %q vs current schema %q", searchPath, schema)
 		}
 	}
@@ -371,30 +387,41 @@ func TestOpen_Integration_CrossSchemaIsolation(t *testing.T) {
 	}
 }
 
-// TestOpen_Integration_SchemaCleanupProvenAfterChildSubtests opens a store,
-// derives its schema, runs a child subtest, and proves that a separate
-// surviving observer connection sees the schema removed after the child ends.
+// TestOpen_Integration_SchemaCleanupProvenAfterChildSubtests opens a store in a
+// child subtest so its cleanup is scoped there, then proves that a separate
+// observer connection sees the schema removed after the child ends.
 func TestOpen_Integration_SchemaCleanupProvenAfterChildSubtests(t *testing.T) {
-	store := testStore(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	var searchPath string
-	if err := store.DB().QueryRowContext(ctx, `SHOW search_path`).Scan(&searchPath); err != nil {
-		t.Fatalf("failed to read search_path: %v", err)
-	}
-	schema := strings.Trim(searchPath, `"`)
-	observer, err := sql.Open("postgres", store.SchemaDSNForTest())
-	if err != nil {
-		t.Fatalf("failed to open observer pool: %v", err)
-	}
-	defer observer.Close()
-	observer.SetMaxOpenConns(1)
+	var schema string
+	var observer *sql.DB
 
-	t.Run("child", func(t *testing.T) {
+	t.Run("owner", func(t *testing.T) {
+		store := testStore(t)
+		schema = store.Schema
+		if schema == "" {
+			t.Fatalf("expected the store to expose its isolated schema")
+		}
+		target, err := validateURL(os.Getenv("TEST_DATABASE_URL"))
+		if err != nil {
+			t.Fatalf("failed to revalidate TEST_DATABASE_URL: %v", err)
+		}
+		observer, err = sql.Open("postgres", target.schemaDSN(schema))
+		if err != nil {
+			t.Fatalf("failed to open observer pool: %v", err)
+		}
+		observer.SetMaxOpenConns(1)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		if _, err := store.DB().ExecContext(ctx, `CREATE TABLE cleanup_probe (id INT)`); err != nil {
 			t.Fatalf("failed to create table in child subtest: %v", err)
 		}
 	})
+	if schema == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping PostgreSQL integration test")
+	}
+	if observer == nil {
+		t.Fatalf("observer pool was not initialized")
+	}
+	defer observer.Close()
 
 	deadline := time.Now().Add(10 * time.Second)
 	for {
@@ -427,28 +454,22 @@ func TestOpen_Integration_PartialSetupFailureDropsSchema(t *testing.T) {
 	if err != nil {
 		t.Skipf("TEST_DATABASE_URL rejected by the validator: %v", err)
 	}
-	var createdSchema string
 	schemaCreated := make(chan string, 1)
-	store, r, outcome := runOpen(map[string]string{
+	store, _, outcome := runOpen(map[string]string{
 		"TEST_DATABASE_URL": raw,
 	}, func(r reporter, target databaseTarget) (*storage.PostgresStorage, error) {
-		schema, err := newSchemaName()
-		if err != nil {
-			return nil, err
-		}
-		createdSchema = schema
-		bootstrap, err := sql.Open("postgres", target.url.String())
-		if err != nil {
-			return nil, err
-		}
-		defer bootstrap.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if _, err := bootstrap.ExecContext(ctx, `CREATE SCHEMA `+pq.QuoteIdentifier(schema)); err != nil {
-			return nil, err
-		}
-		schemaCreated <- schema
-		return nil, errors.New("injected failure after schema creation")
+		return establish(r, target, func(dsn string) (*storage.PostgresStorage, error) {
+			u, err := url.Parse(dsn)
+			if err != nil {
+				return nil, err
+			}
+			schema := strings.Trim(u.Query().Get("search_path"), `"`)
+			if schema == "" {
+				return nil, errors.New("missing search_path in isolated test DSN")
+			}
+			schemaCreated <- schema
+			return nil, errors.New("injected failure after schema creation")
+		})
 	})
 	if store != nil {
 		t.Fatalf("expected a nil store after the injected failure")
@@ -459,7 +480,12 @@ func TestOpen_Integration_PartialSetupFailureDropsSchema(t *testing.T) {
 	if _, ok := outcome.(fatalSentinel); !ok {
 		t.Fatalf("expected a fatal sentinel, got %T", outcome)
 	}
-	schema := <-schemaCreated
+	var schema string
+	select {
+	case schema = <-schemaCreated:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("injected connector did not reach schema creation; the PostgreSQL test target is unavailable")
+	}
 
 	observer, err := sql.Open("postgres", target.url.String())
 	if err != nil {

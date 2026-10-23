@@ -128,7 +128,7 @@ export class LoginComponent {
       next: () => {
         this.loading.set(false);
         const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/workspaces';
-        this.router.navigateByUrl(returnUrl);
+        void this.router.navigateByUrl(returnUrl);
       },
       error: (err) => {
         this.loading.set(false);

@@ -183,7 +183,7 @@ export class RegisterComponent {
       .subscribe({
         next: () => {
           this.loading.set(false);
-          this.router.navigate(['/workspaces']);
+          void this.router.navigate(['/workspaces']);
         },
         error: (err) => {
           this.loading.set(false);
