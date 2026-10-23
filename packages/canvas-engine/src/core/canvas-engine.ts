@@ -18,6 +18,12 @@ import { CommandStack } from '../history/command-stack';
 import { DeleteObjectsCommand } from '../history/delete-objects.command';
 import { ReorderObjectsCommand } from '../history/reorder-objects.command';
 import { UpdatePropertiesCommand } from '../history/update-properties.command';
+import {
+  OperationCommand,
+  collectAffectedIds,
+  snapshotObjects,
+  snapshotsEqual
+} from '../history/operation.command';
 import { ObjectStore } from '../objects/object-store';
 import { CanvasRenderer2D, RendererOptions } from '../renderer/canvas-renderer-2d';
 import { SelectionManager } from '../selection/selection-manager';
@@ -167,6 +173,34 @@ export class CanvasEngine {
   applyRemoteOperation(op: DocumentOperation): void {
     this.store.applyRemoteOperation(op);
     this.renderLoop.requestRender();
+  }
+
+  /**
+   * Applies a batch of document operations as a single undoable unit.
+   * Used by AI generation and Mermaid import so an entire generated diagram can
+   * be undone with one step, while collaborators receive exactly one combined
+   * operation through the store's local-operation stream.
+   *
+   * @returns the number of operations that were applied.
+   */
+  applyOperations(operations: DocumentOperation[], description = 'Apply operations'): number {
+    if (!operations || operations.length === 0) return 0;
+
+    const affectedIds = collectAffectedIds(this.store, operations);
+    if (affectedIds.length === 0) return 0;
+
+    const before = snapshotObjects(this.store, affectedIds);
+    this.store.applyOperations(operations);
+    const after = snapshotObjects(this.store, affectedIds);
+
+    // Operations that resolve to no visible change (e.g. updates to ids that no
+    // longer exist) must not pollute the undo stack with empty entries.
+    if (!snapshotsEqual(before, after)) {
+      this.history.record(new OperationCommand(description, this.store, before, after));
+    }
+
+    this.renderLoop.requestRender();
+    return operations.length;
   }
 
   // --- DOM Attachment Lifecycle ---

@@ -22,6 +22,7 @@ export class ObjectStore {
   private readonly operationListeners = new Set<LocalOperationListener>();
   private isApplyingRemote = false;
   private nextZIndex = 0;
+  private revision = 0;
 
   constructor(initialObjects: CanvasObject[] = []) {
     if (initialObjects.length > 0) {
@@ -31,6 +32,14 @@ export class ObjectStore {
 
   get count(): number {
     return this.objectsMap.size;
+  }
+
+  /**
+   * Monotonically increasing counter bumped on every store mutation.
+   * Lets callers detect whether an operation batch produced any change.
+   */
+  get changeRevision(): number {
+    return this.revision;
   }
 
   get(id: string): CanvasObject | undefined {
@@ -333,11 +342,43 @@ export class ObjectStore {
   applyRemoteOperation(op: DocumentOperation): void {
     if (!op) return;
 
+    const wasApplyingRemote = this.isApplyingRemote;
     this.isApplyingRemote = true;
     try {
       this.executeOperation(op);
     } finally {
-      this.isApplyingRemote = false;
+      this.isApplyingRemote = wasApplyingRemote;
+    }
+  }
+
+  /**
+   * Applies a batch of operations as a single local change.
+   * The individual operations are not broadcast; exactly one combined operation
+   * (or the sole operation when only one was supplied) is emitted to local
+   * operation listeners so collaborators receive the change as one unit.
+   */
+  applyOperations(operations: DocumentOperation[]): void {
+    if (!operations || operations.length === 0) return;
+
+    const revisionBefore = this.revision;
+    const wasApplyingRemote = this.isApplyingRemote;
+    this.isApplyingRemote = true;
+    try {
+      for (const op of operations) {
+        this.executeOperation(op);
+      }
+    } finally {
+      this.isApplyingRemote = wasApplyingRemote;
+    }
+
+    // Nothing actually changed (e.g. updates targeting missing ids): do not
+    // broadcast a no-op to collaborators.
+    if (this.revision === revisionBefore) return;
+
+    if (operations.length === 1) {
+      this.emitLocalOperation(operations[0]!);
+    } else {
+      this.emitLocalOperation({ op: 'batch', operations });
     }
   }
 
@@ -425,6 +466,7 @@ export class ObjectStore {
   }
 
   private notify(event: StoreChangeEvent): void {
+    this.revision++;
     for (const listener of this.listeners) {
       listener(event);
     }

@@ -31,6 +31,7 @@ export * from './history/delete-objects.command';
 export * from './history/transform-objects.command';
 export * from './history/update-properties.command';
 export * from './history/reorder-objects.command';
+export * from './history/operation.command';
 
 // Tools
 export * from './tools/tool';
