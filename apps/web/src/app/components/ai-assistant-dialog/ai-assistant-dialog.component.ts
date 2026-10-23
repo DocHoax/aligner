@@ -4,9 +4,7 @@ import {
   inject,
   signal,
   computed,
-  input,
-  ElementRef,
-  viewChild
+  input
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -34,6 +32,10 @@ interface PendingAiProposal {
   operations: DocumentOperation[];
   addedNodeIds?: string[];
   summary?: string;
+  /** Hash of canvas state when the proposal was created (to detect staleness). */
+  baseStateHash?: string;
+  /** Number of objects on canvas when proposal was created. */
+  baseObjectCount?: number;
 }
 
 const GENERATE_PRESETS: PromptPreset[] = [
@@ -995,7 +997,20 @@ export class AiAssistantDialogComponent implements OnInit {
     return report.findings.filter((f) => f.category === cat);
   });
 
-  readonly generateInputRef = viewChild<ElementRef<HTMLTextAreaElement>>('generateInput');
+  private snapshotCanvasState(): { hash: string; count: number } {
+    const objects = this.bridge.getCurrentObjects();
+    const count = objects.length;
+    // Deterministic-ish hash of ids + positions/sizes to detect structural changes
+    const sig = objects
+      .map((o: any) => `${o.id}:${o.x},${o.y},${o.width},${o.height},${o.zIndex}`)
+      .sort()
+      .join('|');
+    let hash = 0;
+    for (let i = 0; i < sig.length; i++) {
+      hash = (hash * 31 + sig.charCodeAt(i)) >>> 0;
+    }
+    return { hash: hash.toString(36), count };
+  }
 
   ngOnInit(): void {
     // Component lifecycle initialized
@@ -1010,8 +1025,12 @@ export class AiAssistantDialogComponent implements OnInit {
     }
     if (tab === 'generate') {
       setTimeout(() => {
-        if (typeof (this.generateInputRef as any) === 'function') {
-          (this.generateInputRef as any)()?.nativeElement?.focus();
+        const ref: any = (this as any).generateInputRef;
+        if (typeof ref === 'function') {
+          const el = ref();
+          el?.nativeElement?.focus();
+        } else if (ref?.nativeElement) {
+          ref.nativeElement.focus();
         }
       }, 50);
     }
@@ -1058,10 +1077,13 @@ export class AiAssistantDialogComponent implements OnInit {
         next: (res) => {
           if (res.operations && res.operations.length > 0) {
             if (typeof (this.pendingProposal as any)?.set === 'function') {
+              const snap = this.snapshotCanvasState();
               this.pendingProposal.set({
                 source: 'generate',
                 operations: res.operations,
-                summary: res.summary
+                summary: res.summary,
+                baseStateHash: snap.hash,
+                baseObjectCount: snap.count
               });
               return;
             }
@@ -1099,11 +1121,14 @@ export class AiAssistantDialogComponent implements OnInit {
         next: (res) => {
           if (res.operations && res.operations.length > 0) {
             if (typeof (this.pendingProposal as any)?.set === 'function') {
+              const snap = this.snapshotCanvasState();
               this.pendingProposal.set({
                 source: 'modify',
                 operations: res.operations,
                 addedNodeIds: res.addedNodeIds,
-                summary: res.summary
+                summary: res.summary,
+                baseStateHash: snap.hash,
+                baseObjectCount: snap.count
               });
               return;
             }
@@ -1185,10 +1210,13 @@ export class AiAssistantDialogComponent implements OnInit {
         next: (res) => {
           if (res.operations && res.operations.length > 0) {
             if (typeof (this.pendingProposal as any)?.set === 'function') {
+              const snap = this.snapshotCanvasState();
               this.pendingProposal.set({
                 source: 'import-mermaid',
                 operations: res.operations,
-                summary: res.summary
+                summary: res.summary,
+                baseStateHash: snap.hash,
+                baseObjectCount: snap.count
               });
               return;
             }
@@ -1202,6 +1230,22 @@ export class AiAssistantDialogComponent implements OnInit {
   applyPendingProposal(): void {
     const proposal = this.pendingProposal();
     if (!proposal || proposal.operations.length === 0) return;
+
+    // Concurrency guard: if the board changed while the AI was generating,
+    // warn/abort to avoid applying a stale proposal on a different topology.
+    const snap = this.snapshotCanvasState();
+    if (
+      proposal.baseStateHash !== undefined &&
+      snap.hash !== proposal.baseStateHash
+    ) {
+      alert(
+        'This AI proposal was generated against a different canvas state. ' +
+          'The board has changed since generation. Please generate a new proposal ' +
+          'based on the current canvas.'
+      );
+      this.pendingProposal.set(null);
+      return;
+    }
 
     this.bridge.applyOperations(
       proposal.operations,
