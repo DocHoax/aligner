@@ -194,4 +194,5 @@ export interface MermaidImportRequest {
 export interface MermaidImportResponse {
   diagram: ArchitectureDiagram;
   operations: DocumentOperation[];
+  summary?: string;
 }

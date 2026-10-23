@@ -18,6 +18,7 @@ import {
   FindingCategory,
   FindingSeverity
 } from '../../models/ai.models';
+import { DocumentOperation } from '@alignify/protocol';
 
 export type AiTab = 'generate' | 'modify' | 'analyze' | 'explain' | 'mermaid';
 
@@ -26,6 +27,13 @@ interface PromptPreset {
   description: string;
   prompt: string;
   direction?: 'LR' | 'TB';
+}
+
+interface PendingAiProposal {
+  source: 'generate' | 'modify' | 'import-mermaid';
+  operations: DocumentOperation[];
+  addedNodeIds?: string[];
+  summary?: string;
 }
 
 const GENERATE_PRESETS: PromptPreset[] = [
@@ -229,8 +237,49 @@ const SAMPLE_MERMAID = `graph LR
             </button>
           </div>
 
-          <!-- Error Alert Banner -->
-          @if (aiService.error()) {
+          <!-- Preview / Apply-Reject Panel -->
+          @if (pendingProposal(); as proposal) {
+            <div class="mx-6 mt-4 p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/40 space-y-3 animate-in fade-in duration-100">
+              <div class="flex items-start justify-between gap-4">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-indigo-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    <div class="text-xs font-bold text-indigo-200 uppercase tracking-wider">AI Proposal Ready for Review</div>
+                  </div>
+                  <div class="text-xs text-slate-300">
+                    {{ proposal.operations.length }} diagram operation{{ proposal.operations.length > 1 ? 's' : '' }} generated
+                    @if (proposal.summary) {
+                      · {{ proposal.summary }}
+                    }
+                  </div>
+                  <div class="text-[11px] text-slate-400">
+                    Review the proposed changes below. Apply adds them to the canvas as one undoable action; Reject discards them without changing the board.
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    (click)="rejectPendingProposal()"
+                    class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    (click)="applyPendingProposal()"
+                    class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-md shadow-indigo-500/25 transition flex items-center gap-1.5"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Apply to Canvas
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
             <div class="mx-6 mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between animate-in fade-in duration-100">
               <div class="flex items-center gap-2">
                 <svg class="w-4 h-4 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -910,6 +959,9 @@ export class AiAssistantDialogComponent implements OnInit {
   readonly isOpen = signal(false);
   readonly activeTab = signal<AiTab>('generate');
 
+  // Pending proposal awaiting explicit user approval (preview workflow)
+  readonly pendingProposal = signal<PendingAiProposal | null>(null);
+
   // Generate Tab State
   generatePrompt = '';
   generateDirection: 'LR' | 'TB' = 'LR';
@@ -953,16 +1005,22 @@ export class AiAssistantDialogComponent implements OnInit {
     this.activeTab.set(tab);
     this.isOpen.set(true);
     this.aiService.clearError();
+    if (typeof (this.pendingProposal as any)?.set === 'function') {
+      this.pendingProposal.set(null);
+    }
     if (tab === 'generate') {
       setTimeout(() => {
-        if (typeof this.generateInputRef === 'function') {
-          this.generateInputRef()?.nativeElement?.focus();
+        if (typeof (this.generateInputRef as any) === 'function') {
+          (this.generateInputRef as any)()?.nativeElement?.focus();
         }
       }, 50);
     }
   }
 
   close(): void {
+    if (typeof (this.pendingProposal as any)?.set === 'function') {
+      this.pendingProposal.set(null);
+    }
     this.isOpen.set(false);
   }
 
@@ -986,6 +1044,10 @@ export class AiAssistantDialogComponent implements OnInit {
     const bid = this.boardId() || this.boardService.currentBoard()?.id || 'board_default';
     if (!prompt) return;
 
+    if (typeof (this.pendingProposal as any)?.set === 'function') {
+      this.pendingProposal.set(null);
+    }
+
     this.aiService
       .generateDiagram(bid, {
         prompt,
@@ -995,6 +1057,14 @@ export class AiAssistantDialogComponent implements OnInit {
       .subscribe({
         next: (res) => {
           if (res.operations && res.operations.length > 0) {
+            if (typeof (this.pendingProposal as any)?.set === 'function') {
+              this.pendingProposal.set({
+                source: 'generate',
+                operations: res.operations,
+                summary: res.summary
+              });
+              return;
+            }
             this.bridge.applyOperations(res.operations, true);
           }
           this.close();
@@ -1010,6 +1080,10 @@ export class AiAssistantDialogComponent implements OnInit {
     const bid = this.boardId() || this.boardService.currentBoard()?.id || 'board_default';
     if (!prompt) return;
 
+    if (typeof (this.pendingProposal as any)?.set === 'function') {
+      this.pendingProposal.set(null);
+    }
+
     const existing = this.bridge.getCurrentObjects();
     const selectedIds = this.modifySelectedOnly
       ? this.bridge.selectedObjects().map((o) => o.id)
@@ -1024,6 +1098,15 @@ export class AiAssistantDialogComponent implements OnInit {
       .subscribe({
         next: (res) => {
           if (res.operations && res.operations.length > 0) {
+            if (typeof (this.pendingProposal as any)?.set === 'function') {
+              this.pendingProposal.set({
+                source: 'modify',
+                operations: res.operations,
+                addedNodeIds: res.addedNodeIds,
+                summary: res.summary
+              });
+              return;
+            }
             this.bridge.applyOperations(res.operations, true, res.addedNodeIds);
           }
           this.close();
@@ -1090,6 +1173,10 @@ export class AiAssistantDialogComponent implements OnInit {
     const mermaid = this.mermaidInput.trim();
     if (!mermaid) return;
 
+    if (typeof (this.pendingProposal as any)?.set === 'function') {
+      this.pendingProposal.set(null);
+    }
+
     this.aiService
       .importMermaid(bid, {
         mermaid
@@ -1097,11 +1184,41 @@ export class AiAssistantDialogComponent implements OnInit {
       .subscribe({
         next: (res) => {
           if (res.operations && res.operations.length > 0) {
+            if (typeof (this.pendingProposal as any)?.set === 'function') {
+              this.pendingProposal.set({
+                source: 'import-mermaid',
+                operations: res.operations,
+                summary: res.summary
+              });
+              return;
+            }
             this.bridge.applyOperations(res.operations, true);
           }
           this.close();
         }
       });
+  }
+
+  applyPendingProposal(): void {
+    const proposal = this.pendingProposal();
+    if (!proposal || proposal.operations.length === 0) return;
+
+    this.bridge.applyOperations(
+      proposal.operations,
+      true,
+      proposal.addedNodeIds,
+      proposal.source === 'import-mermaid' ? 'Mermaid import' : `AI ${proposal.source}`
+    );
+    if (typeof (this.pendingProposal as any)?.set === 'function') {
+      this.pendingProposal.set(null);
+    }
+    this.close();
+  }
+
+  rejectPendingProposal(): void {
+    if (typeof (this.pendingProposal as any)?.set === 'function') {
+      this.pendingProposal.set(null);
+    }
   }
 
   focusFinding(finding: ArchitectureFinding): void {
