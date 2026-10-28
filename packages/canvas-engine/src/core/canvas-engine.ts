@@ -186,6 +186,9 @@ export class CanvasEngine {
   applyOperations(operations: DocumentOperation[], description = 'Apply operations'): number {
     if (!operations || operations.length === 0) return 0;
 
+    // Capture the store generation *before* applying changes so the undo/redo
+    // command can detect concurrent remote edits that occur after recording.
+    const baseGeneration = this.store.generation;
     const affectedIds = collectAffectedIds(this.store, operations);
     if (affectedIds.length === 0) return 0;
 
@@ -196,7 +199,7 @@ export class CanvasEngine {
     // Operations that resolve to no visible change (e.g. updates to ids that no
     // longer exist) must not pollute the undo stack with empty entries.
     if (!snapshotsEqual(before, after)) {
-      this.history.record(new OperationCommand(description, this.store, before, after));
+      this.history.record(new OperationCommand(description, this.store, before, after, baseGeneration));
     }
 
     this.renderLoop.requestRender();

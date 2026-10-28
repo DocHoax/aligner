@@ -99,10 +99,11 @@ export class OperationCommand implements ICommand {
     public readonly description: string,
     private readonly store: ObjectStore,
     private readonly before: ObjectSnapshot,
-    private readonly after: ObjectSnapshot
+    private readonly after: ObjectSnapshot,
+    baseGeneration?: number
   ) {
     this.id = 'ops_' + Math.random().toString(36).substring(2, 9);
-    this.baseGeneration = store.generation;
+    this.baseGeneration = baseGeneration !== undefined ? baseGeneration : store.generation;
   }
 
   execute(): void {
@@ -110,17 +111,11 @@ export class OperationCommand implements ICommand {
   }
 
   undo(): void {
-    if (this.store.generation !== this.baseGeneration) {
-      return;
-    }
     this.restore(this.before);
     this.baseGeneration = this.store.generation;
   }
 
   redo(): void {
-    if (this.store.generation !== this.baseGeneration) {
-      return;
-    }
     this.restore(this.after);
     this.baseGeneration = this.store.generation;
   }
