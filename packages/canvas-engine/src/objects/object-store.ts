@@ -42,6 +42,10 @@ export class ObjectStore {
     return this.revision;
   }
 
+  get generation(): number {
+    return this.revision;
+  }
+
   get(id: string): CanvasObject | undefined {
     return this.objectsMap.get(id);
   }

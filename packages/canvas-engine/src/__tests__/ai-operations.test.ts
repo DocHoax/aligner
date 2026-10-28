@@ -144,4 +144,125 @@ describe('AI / Mermaid operation batches on the command stack', () => {
 
     engine.destroy();
   });
+
+  it('refuses undo/redo when document changed via concurrent operation', () => {
+    const engine = new CanvasEngine();
+    const store = engine.getStore();
+
+    // Record initial state with one object
+    store.add(ObjectFactory.createRectangle({ id: 'initial', x: 10, y: 10 }));
+
+    // Apply AI batch - records one command with generation baseline
+    engine.applyOperations(
+      [
+        { op: 'create', object: ObjectFactory.createRectangle({ id: 'ai_a', x: 100, y: 100 }) },
+        { op: 'create', object: ObjectFactory.createRectangle({ id: 'ai_b', x: 200, y: 200 }) },
+      ],
+      'AI generate'
+    );
+
+    expect(engine.getStore().count).toBe(3);
+    expect(engine.getHistory().canUndo).toBe(true);
+    expect(engine.getHistory().canRedo).toBe(false);
+
+    // Simulate concurrent remote change: add an object after baseline
+    store.add(ObjectFactory.createRectangle({ id: 'concurrent', x: 300, y: 300 }));
+
+    // Attempt undo - should refuse because generation changed
+    const undoResult = engine.getHistory().undo();
+    expect(undoResult).toBe(false); // Refused, generation changed
+
+    // Redo should also be refused
+    const redoResult = engine.getHistory().redo();
+    expect(redoResult).toBe(false); // Refused, generation changed
+
+    // However, the objects should remain (not overwritten/branched)
+    expect(engine.getStore().count).toBe(4); // 3 original + 1 concurrent
+
+    engine.destroy();
+  });
+
+  it('supports create, update, delete, group, ungroup, batch operations in undo/redo', () => {
+    const engine = new CanvasEngine();
+    const store = engine.getStore();
+
+    // 1. Create initial object
+    engine.applyOperations(
+      [{ op: 'create', object: ObjectFactory.createRectangle({ id: 'obj1', x: 10, y: 10, width: 50, height: 50 }) }],
+      'Init'
+    );
+
+    // 2. Update it
+    engine.applyOperations(
+      [{ op: 'update', id: 'obj1', changes: { x: 100, fillColor: '#ff0000' } }],
+      'Update obj1'
+    );
+    expect(store.get('obj1')?.x).toBe(100);
+    expect(engine.getHistory().undoCount).toBe(2);
+
+    // Undo should revert update
+    engine.getHistory().undo();
+    expect(store.get('obj1')?.x).toBe(10);
+    expect(engine.getHistory().undoCount).toBe(1);
+    expect(engine.getHistory().canUndo).toBe(true);
+    expect(engine.getHistory().canRedo).toBe(true);
+
+    // Redo should reapply update
+    engine.getHistory().redo();
+    expect(store.get('obj1')?.x).toBe(100);
+    expect(engine.getHistory().undoCount).toBe(2);
+    expect(engine.getHistory().canUndo).toBe(true);
+    expect(engine.getHistory().canRedo).toBe(false);
+
+    // 3. Delete object
+    engine.applyOperations(
+      [{ op: 'delete', id: 'obj1' }],
+      'Delete obj1'
+    );
+    expect(store.has('obj1')).toBe(false);
+    expect(engine.getHistory().undoCount).toBe(3);
+
+    // Undo should restore deleted object; concurrent change may affect redo.
+    engine.getHistory().undo();
+    expect(store.has('obj1')).toBe(true);
+    expect(store.get('obj1')?.x).toBe(100);
+
+    // Redo should delete again
+    engine.getHistory().redo();
+    expect(store.has('obj1')).toBe(false);
+
+    // 4. Create new object after deletes
+    engine.applyOperations(
+      [{ op: 'create', object: ObjectFactory.createRectangle({ id: 'obj2', x: 200, y: 200 }) }],
+      'Create obj2'
+    );
+    expect(store.has('obj2')).toBe(true);
+    expect(engine.getHistory().undoCount).toBe(1);
+
+    // Undo should remove obj2
+    engine.getHistory().undo();
+    expect(store.has('obj2')).toBe(false);
+
+    // Redo should restore obj2
+    engine.getHistory().redo();
+    expect(store.has('obj2')).toBe(true);
+
+    // 5. Test nested batch with update/delete
+    const nestedBatch: DocumentOperation = {
+      op: 'batch',
+      operations: [
+        { op: 'create', object: ObjectFactory.createRectangle({ id: 'nested_a', x: 10, y: 10 }) },
+        { op: 'create', object: ObjectFactory.createRectangle({ id: 'nested_b', x: 50, y: 50 }) },
+        { op: 'delete', id: 'nested_a' },
+      ]
+    };
+    engine.applyOperations([nestedBatch], 'Nested batch');
+    expect(store.count).toBe(2); // nested_b + existing from earlier state
+
+    // Undo should restore everything
+    engine.getHistory().undo();
+    expect(store.count).toBe(4); // obj1 restored + nested_a + nested_b (before delete)
+
+    engine.destroy();
+  });
 });

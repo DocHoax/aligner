@@ -87,6 +87,14 @@ export function snapshotsEqual(a: ObjectSnapshot, b: ObjectSnapshot): boolean {
 export class OperationCommand implements ICommand {
   readonly id: string;
 
+  /**
+   * Monotonic generation counter of the store. Used to detect whether the
+   * underlying document has changed through other operations (e.g. remote
+   * collaborator changes or user-driven edits) since this command was recorded.
+   * Updated after successful undo/redo to allow chaining.
+   */
+  private baseGeneration: number;
+
   constructor(
     public readonly description: string,
     private readonly store: ObjectStore,
@@ -94,6 +102,7 @@ export class OperationCommand implements ICommand {
     private readonly after: ObjectSnapshot
   ) {
     this.id = 'ops_' + Math.random().toString(36).substring(2, 9);
+    this.baseGeneration = store.generation;
   }
 
   execute(): void {
@@ -101,11 +110,19 @@ export class OperationCommand implements ICommand {
   }
 
   undo(): void {
+    if (this.store.generation !== this.baseGeneration) {
+      return;
+    }
     this.restore(this.before);
+    this.baseGeneration = this.store.generation;
   }
 
   redo(): void {
+    if (this.store.generation !== this.baseGeneration) {
+      return;
+    }
     this.restore(this.after);
+    this.baseGeneration = this.store.generation;
   }
 
   /**
